@@ -317,6 +317,92 @@ enum TestFixtures {
     }
     """
 
+    /// Keys with plural variations
+    static let pluralVariations = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%lld items": {
+          "localizations": {
+            "en": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld item"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld items"
+                    }
+                  }
+                }
+              }
+            },
+            "ja": {
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld個のアイテム"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Hello": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Hello"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    /// Keys with device variations
+    static let deviceVariations = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "Start": {
+          "localizations": {
+            "en": {
+              "variations": {
+                "device": {
+                  "iphone": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Tap to start"
+                    }
+                  },
+                  "mac": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Click to start"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
     /// Keys with stale extraction state
     static let withStaleKeys = """
     {
