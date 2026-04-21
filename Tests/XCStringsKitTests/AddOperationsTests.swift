@@ -90,4 +90,17 @@ struct AddOperationsTests {
         #expect(keyInfo.shouldTranslate == false)
         #expect(keyInfo.translations.isEmpty)
     }
+
+    @Test("addTranslation creates a localization container for keys without localizations")
+    func addTranslationCreatesMissingLocalizationContainer() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.emptyLocalizations)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+
+        try await parser.addTranslation(key: "NoTranslation", language: "en", value: "Now Localized")
+
+        let translation = try await parser.getTranslation(key: "NoTranslation", language: "en")
+        #expect(translation["en"]?.value == "Now Localized")
+    }
 }

@@ -164,6 +164,16 @@ struct XCStringsReaderTests {
         #expect(translations["ja"]?.value == "こんにちは")
     }
 
+    @Test("getTranslation throws for missing language")
+    func getTranslationMissingLanguage() throws {
+        let file = try loadFixture(TestFixtures.singleKeySingleLang)
+        let reader = XCStringsReader(file: file)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try reader.getTranslation(key: "Hello", language: "fr")
+        }
+    }
+
     // MARK: - checkKey
 
     @Test("checkKey returns true for existing key")
@@ -257,6 +267,16 @@ struct XCStringsReaderTests {
         #expect(coverage.coverage.percent == nil)
         #expect(coverage.missingLanguages.isEmpty)
         #expect(coverage.translatedLanguages.isEmpty)
+    }
+
+    @Test("checkCoverage throws for non-existent key")
+    func checkCoverageMissingKey() throws {
+        let file = try loadFixture(TestFixtures.singleKeySingleLang)
+        let reader = XCStringsReader(file: file)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try reader.checkCoverage("Missing")
+        }
     }
 
     // MARK: - Helper

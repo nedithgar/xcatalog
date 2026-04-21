@@ -75,8 +75,25 @@ struct BatchEntryParserTests {
 
     @Test("parse throws noTranslations for empty translations")
     func parseNoTranslations() throws {
-        #expect(throws: BatchEntryParseError.self) {
-            try BatchEntryParser.parse("Hello=")
+        do {
+            _ = try BatchEntryParser.parse("Hello=")
+            Issue.record("Expected parse to throw noTranslations")
+        } catch let error as BatchEntryParseError {
+            switch error {
+            case .noTranslations(let input):
+                #expect(input == "Hello=")
+            default:
+                Issue.record("Unexpected error: \(error.localizedDescription)")
+            }
         }
+    }
+
+    @Test("BatchEntryParseError descriptions are descriptive")
+    func batchEntryParseErrorDescriptions() {
+        #expect(BatchEntryParseError.invalidFormat("Hello").localizedDescription.contains("Expected 'key=lang:value,lang:value'"))
+        #expect(BatchEntryParseError.emptyKey("=en:Hello").localizedDescription == "Empty key in: '=en:Hello'")
+        #expect(BatchEntryParseError.invalidTranslationFormat("enHello").localizedDescription.contains("Expected 'lang:value'"))
+        #expect(BatchEntryParseError.emptyLanguage(":Hello").localizedDescription == "Empty language code in: ':Hello'")
+        #expect(BatchEntryParseError.noTranslations("Hello=").localizedDescription == "No translations specified for: 'Hello='")
     }
 }

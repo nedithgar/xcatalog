@@ -7,6 +7,7 @@ struct PersistenceTests {
     @Test("Changes are persisted to file", arguments: [
         FixtureType.empty,
         FixtureType.singleKeySingleLang,
+        FixtureType.realWorldSample,
     ])
     func changesPersisted(fixture: FixtureType) async throws {
         let path = try TestHelper.createTempFile(content: fixture.content)

@@ -34,6 +34,7 @@ struct ListOperationsTests {
         (FixtureType.singleKeySingleLang, 1),
         (FixtureType.singleKeyMultipleLangs, 3),
         (FixtureType.manyLanguages, 7),
+        (FixtureType.realWorldSample, 3),
     ])
     func listLanguagesCount(fixture: FixtureType, expectedCount: Int) async throws {
         let path = try TestHelper.createTempFile(content: fixture.content)
@@ -49,6 +50,7 @@ struct ListOperationsTests {
         (FixtureType.multipleKeysPartialTranslations, "ja", ["Goodbye"]),
         (FixtureType.multipleKeysPartialTranslations, "de", ["Goodbye", "Hello"]),
         (FixtureType.manyKeys, "ja", ["Key1", "Key10", "Key2", "Key3", "Key4", "Key5", "Key9"]),
+        (FixtureType.realWorldSample, "en", ["This view now has a bit more to say."]),
     ])
     func listUntranslated(fixture: FixtureType, language: String, expectedKeys: [String]) async throws {
         let path = try TestHelper.createTempFile(content: fixture.content)

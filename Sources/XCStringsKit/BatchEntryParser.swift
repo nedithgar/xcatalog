@@ -16,6 +16,10 @@ package enum BatchEntryParser {
             throw BatchEntryParseError.emptyKey(input)
         }
 
+        guard !translationsStr.isEmpty else {
+            throw BatchEntryParseError.noTranslations(input)
+        }
+
         // Parse translations (comma-separated lang:value pairs)
         let translations = try translationsStr
             .split(separator: ",", omittingEmptySubsequences: false)
@@ -34,10 +38,6 @@ package enum BatchEntryParser {
 
                 result[lang] = value
             }
-
-        if translations.isEmpty {
-            throw BatchEntryParseError.noTranslations(input)
-        }
 
         return BatchTranslationEntry(key: key, translations: translations)
     }
