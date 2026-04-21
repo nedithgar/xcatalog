@@ -33,7 +33,7 @@ struct XCStringsFileHandler: Sendable {
     /// Save xcstrings file to disk
     func save(_ file: XCStringsFile) throws {
         let url = URL(fileURLWithPath: path)
-        let data = Self.encodedData(for: file)
+        let data = try encodedData(for: file)
 
         do {
             try data.write(to: url, options: .atomic)
@@ -51,7 +51,7 @@ struct XCStringsFileHandler: Sendable {
         }
 
         let file = XCStringsFile(sourceLanguage: sourceLanguage)
-        let data = Self.encodedData(for: file)
+        let data = try encodedData(for: file)
 
         do {
             try data.write(to: url, options: .atomic)
@@ -60,10 +60,13 @@ struct XCStringsFileHandler: Sendable {
         }
     }
 
-    private static func encodedData(for file: XCStringsFile) -> Data {
+    private func encodedData(for file: XCStringsFile) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        // XCStringsFile only contains trivially encodable value types.
-        return try! encoder.encode(file)
+        do {
+            return try encoder.encode(file)
+        } catch {
+            throw XCStringsError.writeError(path: path, reason: error.localizedDescription)
+        }
     }
 }
