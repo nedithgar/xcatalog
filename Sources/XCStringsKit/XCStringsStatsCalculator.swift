@@ -31,9 +31,7 @@ struct XCStringsStatsCalculator: Sendable {
             let translated = translatableEntries.lazy.filter { $0.countsAsTranslated(for: language) }.count
             let total = translatableEntries.count
             let untranslated = total - translated
-            let coverage = total == 0
-                ? CoverageMeasurement.notApplicable
-                : .measured(Double(translated) / Double(total) * 100)
+            let coverage = CoverageMeasurement.measured(translated: translated, total: total)
 
             return (language, LanguageStats(
                 translated: translated,
@@ -88,20 +86,20 @@ struct XCStringsStatsCalculator: Sendable {
         let allLanguages = Set(summaries.lazy.flatMap { $0.languages.keys })
         let languageTotals = summaries.lazy
             .flatMap(\.languages)
-            .reduce(into: [String: (sum: Double, count: Int)]()) { totals, pair in
-                guard let percent = pair.value.percent else {
-                    totals[pair.key] = totals[pair.key] ?? (sum: 0, count: 0)
+            .reduce(into: [String: (sum: Decimal, count: Int)]()) { totals, pair in
+                guard let percent = pair.value.rawPercent else {
+                    totals[pair.key] = totals[pair.key] ?? (sum: .zero, count: 0)
                     return
                 }
 
-                let current = totals[pair.key] ?? (sum: 0, count: 0)
+                let current = totals[pair.key] ?? (sum: .zero, count: 0)
                 totals[pair.key] = (sum: current.sum + percent, count: current.count + 1)
             }
         let averageCoverage = Dictionary(uniqueKeysWithValues: allLanguages.map { language in
-            let totals = languageTotals[language] ?? (sum: 0, count: 0)
+            let totals = languageTotals[language] ?? (sum: .zero, count: 0)
             let measurement = totals.count == 0
                 ? CoverageMeasurement.notApplicable
-                : .measured(totals.sum / Double(totals.count))
+                : .measured(totals.sum / Decimal(totals.count))
             return (language, measurement)
         })
 
@@ -127,4 +125,3 @@ struct XCStringsStatsCalculator: Sendable {
         CompactBatchCoverageSummary(from: getBatchCoverage(files: files))
     }
 }
-

@@ -190,10 +190,85 @@ struct XCStringsStatsCalculatorTests {
         #expect(compactBatch.aggregated.completionState == .incomplete)
     }
 
+    @Test("measured coverage rounds serialized percentages to two decimals")
+    func measuredCoverageRoundingContract() {
+        let oneThird = CoverageMeasurement.measured(100.0 / 3.0)
+        let noisyWholeNumber = CoverageMeasurement.measured(30.000000000000004)
+        let twoThirds = CoverageMeasurement.measured(200.0 / 3.0)
+
+        #expect(oneThird.state == .measured)
+        #expect(oneThird.percent == 33.33)
+        #expect(noisyWholeNumber.percent == 30.0)
+        #expect(twoThirds.percent == 66.67)
+    }
+
+    @Test("measured coverage from counts shares the same output contract")
+    func measuredCoverageFromCounts() {
+        let partialCoverage = CoverageMeasurement.measured(translated: 1, total: 3)
+        let exactCoverage = CoverageMeasurement.measured(translated: 3, total: 10)
+        let emptyCoverage = CoverageMeasurement.measured(translated: 0, total: 0)
+
+        #expect(partialCoverage.state == .measured)
+        #expect(partialCoverage.percent == 33.33)
+        #expect(exactCoverage.percent == 30.0)
+        #expect(emptyCoverage.state == .notApplicable)
+        #expect(emptyCoverage.percent == nil)
+    }
+
+    @Test("serialized percentages do not round incomplete coverage up to 100")
+    func measuredCoverageDoesNotPromoteIncompleteValuesToComplete() {
+        let coverage = CoverageMeasurement.measured(99.995)
+
+        #expect(coverage.state == .measured)
+        #expect(coverage.percent == 99.99)
+        #expect(coverage.isIncomplete)
+    }
+
+    @Test("count-derived coverage serializes exact half-cent percentages correctly")
+    func measuredCoverageRoundsHalfCentValuesCorrectly() throws {
+        let coverage = CoverageMeasurement.measured(translated: 3333, total: 20_000)
+        let encoded = try encodeJSON(coverage)
+
+        #expect(coverage.state == .measured)
+        #expect(encoded.contains("\"percent\":16.67"))
+    }
+
+    @Test("batch coverage averages exact file percentages before rounding")
+    func batchCoverageUsesExactPercentagesBeforeRounding() throws {
+        let batchCoverage = XCStringsStatsCalculator.getBatchCoverage(files: [
+            ("Zero.xcstrings", makeFile(translated: 0, total: 1)),
+            ("Third.xcstrings", makeFile(translated: 1, total: 3)),
+            ("FourNinths.xcstrings", makeFile(translated: 4, total: 9)),
+        ])
+
+        let aggregated = try #require(batchCoverage.aggregated.averageCoverageByLanguage["en"])
+
+        #expect(batchCoverage.files[0].languages["en"]?.percent == 0.0)
+        #expect(batchCoverage.files[1].languages["en"]?.percent == 33.33)
+        #expect(batchCoverage.files[2].languages["en"]?.percent == 44.44)
+        #expect(aggregated.percent == 25.93)
+    }
+
     // MARK: - Helper
 
     private func loadFixture(_ content: String) throws -> XCStringsFile {
         let data = content.data(using: .utf8)!
         return try JSONDecoder().decode(XCStringsFile.self, from: data)
+    }
+
+    private func makeFile(translated: Int, total: Int, language: String = "en") -> XCStringsFile {
+        let strings = Dictionary(uniqueKeysWithValues: (0..<total).map { index in
+            let localizations: [String: Localization]? = index < translated
+                ? [language: Localization(stringUnit: StringUnit(value: "Value \(index)"))]
+                : nil
+            return ("Key\(index)", StringEntry(localizations: localizations))
+        })
+
+        return XCStringsFile(sourceLanguage: language, strings: strings, version: "1.0")
+    }
+
+    private func encodeJSON<T: Encodable>(_ value: T) throws -> String {
+        let data = try JSONEncoder().encode(value)
+        return try #require(String(data: data, encoding: .utf8))
     }
 }

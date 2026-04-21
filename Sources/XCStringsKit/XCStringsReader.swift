@@ -123,7 +123,8 @@ struct XCStringsReader: Sendable {
         let translatedLanguages = allLanguages.filter { entry.countsAsTranslated(for: $0) }
         let missingLanguages = allLanguages.filter { !translatedLanguages.contains($0) }
         let coverage = CoverageMeasurement.measured(
-            allLanguages.isEmpty ? 0 : Double(translatedLanguages.count) / Double(allLanguages.count) * 100
+            translated: translatedLanguages.count,
+            total: allLanguages.count
         )
 
         return CoverageInfo(
@@ -178,4 +179,3 @@ struct XCStringsReader: Sendable {
         )
     }
 }
-

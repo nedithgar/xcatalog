@@ -137,11 +137,46 @@ package enum CoverageState: String, Codable, Sendable {
 
 package struct CoverageMeasurement: Codable, Sendable {
     package let state: CoverageState
-    package let percent: Double?
+    let rawPercent: Decimal?
+
+    package var percent: Double? {
+        rawPercent.map(Self.serializedPercent(from:))
+    }
+
+    package init(state: CoverageState, rawPercent: Decimal?) {
+        self.state = state
+        self.rawPercent = rawPercent
+    }
 
     package init(state: CoverageState, percent: Double?) {
-        self.state = state
-        self.percent = percent
+        self.init(state: state, rawPercent: percent.flatMap(Self.decimalPercent(from:)))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case state
+        case percent
+    }
+
+    package init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.state = try container.decode(CoverageState.self, forKey: .state)
+        if let percent = try container.decodeIfPresent(Decimal.self, forKey: .percent) {
+            self.rawPercent = percent
+        } else {
+            let percent = try container.decodeIfPresent(Double.self, forKey: .percent)
+            self.rawPercent = percent.flatMap(Self.decimalPercent(from:))
+        }
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(state, forKey: .state)
+
+        if let rawPercent {
+            try container.encode(Self.serializedPercentDecimal(from: rawPercent), forKey: .percent)
+        } else {
+            try container.encodeNil(forKey: .percent)
+        }
     }
 }
 
@@ -406,20 +441,67 @@ package extension CompactCompletionState {
 }
 
 package extension CoverageMeasurement {
+    private static let serializedPercentScale = 2
+    private static let percentLocale = Locale(identifier: "en_US_POSIX")
+    private static let hundred = Decimal(100)
+    private static let zero = Decimal.zero
+    private static let smallestSerializedStep = Decimal(string: "0.01", locale: percentLocale)!
+
     static func measured(_ percent: Double) -> CoverageMeasurement {
-        CoverageMeasurement(state: .measured, percent: percent)
+        CoverageMeasurement(state: .measured, rawPercent: decimalPercent(from: percent))
+    }
+
+    static func measured(_ percent: Decimal) -> CoverageMeasurement {
+        CoverageMeasurement(state: .measured, rawPercent: percent)
+    }
+
+    static func measured(translated: Int, total: Int) -> CoverageMeasurement {
+        guard total > 0 else {
+            return .notApplicable
+        }
+
+        let percent = (Decimal(translated) * hundred) / Decimal(total)
+        return measured(percent)
     }
 
     static var notApplicable: CoverageMeasurement {
-        CoverageMeasurement(state: .notApplicable, percent: nil)
+        CoverageMeasurement(state: .notApplicable, rawPercent: nil)
+    }
+
+    private static func decimalPercent(from percent: Double) -> Decimal? {
+        guard percent.isFinite else {
+            return nil
+        }
+
+        return Decimal(string: String(percent), locale: percentLocale)
+            ?? NSDecimalNumber(value: percent).decimalValue
+    }
+
+    private static func serializedPercent(from rawPercent: Decimal) -> Double {
+        let roundedPercent = serializedPercentDecimal(from: rawPercent)
+        let percent = NSDecimalNumber(decimal: roundedPercent).doubleValue
+        return percent == 0 ? 0 : percent
+    }
+
+    private static func serializedPercentDecimal(from rawPercent: Decimal) -> Decimal {
+        var decimalPercent = rawPercent
+        var roundedDecimal = Decimal()
+        NSDecimalRound(&roundedDecimal, &decimalPercent, serializedPercentScale, .plain)
+
+        // Coverage that is still incomplete should never be surfaced as 100%.
+        if rawPercent < hundred, roundedDecimal >= hundred {
+            return hundred - smallestSerializedStep
+        }
+
+        return roundedDecimal
     }
 
     var isComplete: Bool {
-        state == .measured && percent == 100
+        state == .measured && rawPercent == Self.hundred
     }
 
     var isIncomplete: Bool {
-        state == .measured && (percent ?? 0) < 100
+        state == .measured && (rawPercent ?? Self.zero) < Self.hundred
     }
 
     var isNotApplicable: Bool {
