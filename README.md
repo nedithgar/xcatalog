@@ -71,7 +71,7 @@ Add to your Claude Code MCP settings:
 | `xcstrings_list_stale` | List keys with stale extraction state |
 | `xcstrings_batch_list_stale` | List stale keys across multiple files |
 | `xcstrings_get_source_language` | Get source language |
-| `xcstrings_get_key` | Get translations for a key |
+| `xcstrings_get_key` | Get metadata and translations for a key |
 | `xcstrings_check_key` | Check if key exists |
 | `xcstrings_check_coverage` | Check key language coverage |
 | `xcstrings_stats_coverage` | Get overall coverage statistics |
@@ -125,7 +125,7 @@ xcstrings-crud batch stale -f file1.xcstrings file2.xcstrings file3.xcstrings
 # Get source language
 xcstrings-crud get source-language --file path/to/Localizable.xcstrings
 
-# Get translations for a key
+# Get metadata and translations for a key
 xcstrings-crud get key "Hello" --file path/to/Localizable.xcstrings
 xcstrings-crud get key "Hello" --file path/to/Localizable.xcstrings --lang ja
 

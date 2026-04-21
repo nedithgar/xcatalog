@@ -16,14 +16,11 @@ struct XCStringsStatsCalculator: Sendable {
         let entries = file.strings.values
 
         let coverageByLanguage = Dictionary(uniqueKeysWithValues: allLanguages.lazy.map { language in
-            let translated = entries.lazy.filter { entry in
-                let localization = entry.localizations?[language]
-                return localization?.stringUnit?.value != nil || localization?.variations != nil
-            }.count
-
-            let total = entries.count
+            let translatableEntries = entries.lazy.filter(\.requiresTranslation)
+            let translated = translatableEntries.filter { $0.countsAsTranslated(for: language) }.count
+            let total = translatableEntries.count
             let untranslated = total - translated
-            let coveragePercent = total == 0 ? 0 : Double(translated) / Double(total) * 100
+            let coveragePercent = total == 0 ? 100 : Double(translated) / Double(total) * 100
 
             return (language, LanguageStats(
                 translated: translated,
@@ -102,5 +99,20 @@ struct XCStringsStatsCalculator: Sendable {
     /// Get compact batch coverage for multiple files
     static func getCompactBatchCoverage(files: [(path: String, file: XCStringsFile)]) -> CompactBatchCoverageSummary {
         CompactBatchCoverageSummary(from: getBatchCoverage(files: files))
+    }
+}
+
+private extension StringEntry {
+    var requiresTranslation: Bool {
+        shouldTranslate != false
+    }
+
+    func countsAsTranslated(for language: String) -> Bool {
+        guard requiresTranslation else {
+            return true
+        }
+
+        let localization = localizations?[language]
+        return localization?.stringUnit?.value != nil || localization?.variations != nil
     }
 }

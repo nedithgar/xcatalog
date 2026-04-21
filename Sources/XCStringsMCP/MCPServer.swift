@@ -107,12 +107,12 @@ public struct XCStringsMCPServer {
             ),
             Tool(
                 name: "xcstrings_get_key",
-                description: "Get translations for a specific key",
+                description: "Get metadata and translations for a specific key",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
-                        "key": .object(["type": .string("string"), "description": .string("The key to get translations for")]),
+                        "key": .object(["type": .string("string"), "description": .string("The key to get details for")]),
                         "language": .object(["type": .string("string"), "description": .string("Optional specific language to get")]),
                     ]),
                     "required": .array([.string("file"), .string("key")]),

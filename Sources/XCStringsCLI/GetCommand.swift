@@ -14,10 +14,10 @@ extension GetCommand {
     struct Key: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "key",
-            abstract: "Get translations for a specific key"
+            abstract: "Get details for a specific key"
         )
 
-        @Argument(help: "The key to get translations for")
+        @Argument(help: "The key to get details for")
         var key: String
 
         @Option(name: .shortAndLong, help: "Path to the xcstrings file")
@@ -31,8 +31,8 @@ extension GetCommand {
 
         func run() async throws {
             let parser = XCStringsParser(path: file)
-            let translations = try await parser.getTranslation(key: key, language: lang)
-            try CLIOutput.printJSON(translations, pretty: pretty)
+            let keyInfo = try await parser.getKey(key, language: lang)
+            try CLIOutput.printJSON(keyInfo, pretty: pretty)
         }
     }
 

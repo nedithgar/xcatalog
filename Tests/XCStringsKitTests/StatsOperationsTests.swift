@@ -42,4 +42,34 @@ struct StatsOperationsTests {
         #expect(progress.translated == translated)
         #expect(progress.untranslated == untranslated)
     }
+
+    @Test("getStats excludes non-translatable keys from coverage totals")
+    func getStatsExcludesNonTranslatableKeys() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let stats = try await parser.getStats()
+        let jaStats = try #require(stats.coverageByLanguage["ja"])
+
+        #expect(stats.totalKeys == 2)
+        #expect(jaStats.translated == 1)
+        #expect(jaStats.untranslated == 0)
+        #expect(jaStats.total == 1)
+        #expect(jaStats.coveragePercent == 100.0)
+    }
+
+    @Test("getProgress excludes non-translatable keys from totals")
+    func getProgressExcludesNonTranslatableKeys() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let progress = try await parser.getProgress(for: "ja")
+
+        #expect(progress.translated == 1)
+        #expect(progress.untranslated == 0)
+        #expect(progress.total == 1)
+        #expect(progress.coveragePercent == 100.0)
+    }
 }

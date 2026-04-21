@@ -25,8 +25,8 @@ struct GetKeyHandler: ToolHandler {
         let language = context.arguments.optionalString("language")
 
         let parser = XCStringsParser(path: file)
-        let translations = try await parser.getTranslation(key: key, language: language)
-        return try JSONEncoderHelper.encode(translations)
+        let keyInfo = try await parser.getKey(key, language: language)
+        return try JSONEncoderHelper.encode(keyInfo)
     }
 }
 
