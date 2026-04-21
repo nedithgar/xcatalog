@@ -190,6 +190,23 @@ struct XCStringsStatsCalculatorTests {
         #expect(compactBatch.aggregated.completionState == .incomplete)
     }
 
+    @Test("getCompactBatchCoverage reports complete state without optional payloads")
+    func getCompactBatchCoverageComplete() throws {
+        let completeFile = try loadFixture(TestFixtures.singleKeySingleLang)
+        let compactBatch = XCStringsStatsCalculator.getCompactBatchCoverage(files: [
+            ("Complete.xcstrings", completeFile)
+        ])
+
+        let fileSummary = try #require(compactBatch.files.first)
+
+        #expect(fileSummary.completionState == .complete)
+        #expect(fileSummary.incompleteLanguages == nil)
+        #expect(fileSummary.notApplicableLanguages == nil)
+        #expect(compactBatch.aggregated.completionState == .complete)
+        #expect(compactBatch.aggregated.incompleteLanguages == nil)
+        #expect(compactBatch.aggregated.notApplicableLanguages == nil)
+    }
+
     @Test("measured coverage rounds serialized percentages to two decimals")
     func measuredCoverageRoundingContract() {
         let oneThird = CoverageMeasurement.measured(100.0 / 3.0)

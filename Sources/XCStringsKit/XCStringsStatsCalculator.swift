@@ -96,7 +96,9 @@ struct XCStringsStatsCalculator: Sendable {
                 totals[pair.key] = (sum: current.sum + percent, count: current.count + 1)
             }
         let averageCoverage = Dictionary(uniqueKeysWithValues: allLanguages.map { language in
-            let totals = languageTotals[language] ?? (sum: .zero, count: 0)
+            // `languageTotals` is seeded for every language present in `allLanguages`,
+            // including not-applicable ones whose measurable count stays at zero.
+            let totals = languageTotals[language]!
             let measurement = totals.count == 0
                 ? CoverageMeasurement.notApplicable
                 : .measured(totals.sum / Decimal(totals.count))
