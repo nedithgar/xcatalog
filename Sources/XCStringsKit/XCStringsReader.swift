@@ -179,17 +179,3 @@ struct XCStringsReader: Sendable {
     }
 }
 
-private extension StringEntry {
-    var requiresTranslation: Bool {
-        shouldTranslate != false
-    }
-
-    func countsAsTranslated(for language: String) -> Bool {
-        guard requiresTranslation else {
-            return true
-        }
-
-        let localization = localizations?[language]
-        return localization?.stringUnit?.value != nil || localization?.variations != nil
-    }
-}
