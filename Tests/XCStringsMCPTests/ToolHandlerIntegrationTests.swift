@@ -149,6 +149,44 @@ struct ToolHandlerIntegrationTests {
         #expect(keyInfo.translations.isEmpty)
     }
 
+    @Test("GetKeyHandler keeps metadata when requested language is absent")
+    func getKeyHandlerMissingLanguage() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = GetKeyHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("BrandName"),
+            "language": .string("ja")
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let keyInfo: KeyInfo = try decodeJSON(result, as: KeyInfo.self)
+
+        #expect(keyInfo.key == "BrandName")
+        #expect(keyInfo.shouldTranslate == false)
+        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.translations.isEmpty)
+    }
+
+    @Test("GetKeyHandler throws when requested language is absent for translatable key")
+    func getKeyHandlerMissingLanguageThrowsForTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = GetKeyHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("Hello"),
+            "language": .string("fr")
+        ]))
+
+        await #expect(throws: XCStringsError.self) {
+            _ = try await handler.execute(with: context)
+        }
+    }
+
     @Test("CheckKeyHandler returns true for existing key")
     func checkKeyHandlerExists() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
@@ -193,8 +231,13 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("totalKeys"))
-        #expect(result.contains("10"))
+        let stats: StatsInfo = try decodeJSON(result, as: StatsInfo.self)
+        let jaStats = try #require(stats.coverageByLanguage["ja"])
+
+        #expect(stats.totalKeys == 10)
+        #expect(jaStats.translated == 3)
+        #expect(jaStats.coverage.state == .measured)
+        #expect(jaStats.coverage.percent == 30.0)
     }
 
     @Test("StatsProgressHandler returns progress for language")
@@ -209,8 +252,49 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("translated"))
-        #expect(result.contains("3"))
+        let progress: LanguageStats = try decodeJSON(result, as: LanguageStats.self)
+
+        #expect(progress.translated == 3)
+        #expect(progress.total == 10)
+        #expect(progress.coverage.state == .measured)
+        #expect(progress.coverage.percent == 30.0)
+    }
+
+    @Test("StatsCoverageHandler surfaces notApplicable coverage for empty files")
+    func statsCoverageHandlerEmptyFile() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = StatsCoverageHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "compact": .bool(false)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let stats: StatsInfo = try decodeJSON(result, as: StatsInfo.self)
+        let enStats = try #require(stats.coverageByLanguage["en"])
+
+        #expect(enStats.total == 0)
+        #expect(enStats.coverage.state == .notApplicable)
+        #expect(enStats.coverage.percent == nil)
+    }
+
+    @Test("StatsCoverageHandler defaults to compact tri-state summaries")
+    func statsCoverageHandlerDefaultCompact() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = StatsCoverageHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let compactStats: CompactStatsInfo = try decodeJSON(result, as: CompactStatsInfo.self)
+
+        #expect(compactStats.completionState == .notApplicable)
+        #expect(compactStats.notApplicableLanguages == ["en"])
     }
 
     // MARK: - Create Handlers

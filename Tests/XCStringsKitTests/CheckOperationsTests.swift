@@ -65,7 +65,7 @@ struct CheckOperationsTests {
         #expect(coverage.missingLanguages.count == missingCount)
     }
 
-    @Test("checkCoverage treats non-translatable keys as complete")
+    @Test("checkCoverage marks non-translatable keys as notApplicable")
     func checkCoverageNonTranslatableKey() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
         defer { TestHelper.removeTempFile(at: path) }
@@ -73,8 +73,9 @@ struct CheckOperationsTests {
         let parser = XCStringsParser(path: path)
         let coverage = try await parser.checkCoverage("BrandName")
 
-        #expect(coverage.coveragePercent == 100.0)
+        #expect(coverage.coverage.state == .notApplicable)
+        #expect(coverage.coverage.percent == nil)
         #expect(coverage.missingLanguages.isEmpty)
-        #expect(coverage.translatedLanguages == ["en", "ja"])
+        #expect(coverage.translatedLanguages.isEmpty)
     }
 }

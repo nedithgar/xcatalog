@@ -13,20 +13,21 @@ struct XCStringsStatsCalculator: Sendable {
     /// Get overall statistics
     func getStats() -> StatsInfo {
         let allLanguages = reader.listLanguages()
-        let entries = file.strings.values
+        let translatableEntries = file.strings.values.filter(\.requiresTranslation)
 
         let coverageByLanguage = Dictionary(uniqueKeysWithValues: allLanguages.lazy.map { language in
-            let translatableEntries = entries.lazy.filter(\.requiresTranslation)
-            let translated = translatableEntries.filter { $0.countsAsTranslated(for: language) }.count
+            let translated = translatableEntries.lazy.filter { $0.countsAsTranslated(for: language) }.count
             let total = translatableEntries.count
             let untranslated = total - translated
-            let coveragePercent = total == 0 ? 100 : Double(translated) / Double(total) * 100
+            let coverage = total == 0
+                ? CoverageMeasurement.notApplicable
+                : .measured(Double(translated) / Double(total) * 100)
 
             return (language, LanguageStats(
                 translated: translated,
                 untranslated: untranslated,
                 total: total,
-                coveragePercent: coveragePercent
+                coverage: coverage
             ))
         })
 
@@ -52,7 +53,7 @@ struct XCStringsStatsCalculator: Sendable {
     /// Get compact coverage summary (token-efficient)
     func getCoverageSummary(fileName: String) -> FileCoverageSummary {
         let stats = getStats()
-        let languages = stats.coverageByLanguage.mapValues { $0.coveragePercent }
+        let languages = stats.coverageByLanguage.mapValues(\.coverage)
         return FileCoverageSummary(
             file: fileName,
             totalKeys: stats.totalKeys,
@@ -70,14 +71,27 @@ struct XCStringsStatsCalculator: Sendable {
         let totalFiles = summaries.count
         let totalKeys = summaries.reduce(0) { $0 + $1.totalKeys }
 
-        // Calculate weighted average coverage by language
+        // Average only measurable coverage values. If a language has no translatable
+        // work across all files, surface that as notApplicable instead of inventing a percent.
+        let allLanguages = Set(summaries.lazy.flatMap { $0.languages.keys })
         let languageTotals = summaries.lazy
             .flatMap(\.languages)
             .reduce(into: [String: (sum: Double, count: Int)]()) { totals, pair in
+                guard let percent = pair.value.percent else {
+                    totals[pair.key] = totals[pair.key] ?? (sum: 0, count: 0)
+                    return
+                }
+
                 let current = totals[pair.key] ?? (sum: 0, count: 0)
-                totals[pair.key] = (sum: current.sum + pair.value, count: current.count + 1)
+                totals[pair.key] = (sum: current.sum + percent, count: current.count + 1)
             }
-        let averageCoverage = languageTotals.mapValues { $0.sum / Double($0.count) }
+        let averageCoverage = Dictionary(uniqueKeysWithValues: allLanguages.map { language in
+            let totals = languageTotals[language] ?? (sum: 0, count: 0)
+            let measurement = totals.count == 0
+                ? CoverageMeasurement.notApplicable
+                : .measured(totals.sum / Double(totals.count))
+            return (language, measurement)
+        })
 
         return BatchCoverageSummary(
             files: summaries,

@@ -130,6 +130,21 @@ package struct DeviceVariation: Codable, Sendable {
 
 // MARK: - Output Models
 
+package enum CoverageState: String, Codable, Sendable {
+    case measured
+    case notApplicable
+}
+
+package struct CoverageMeasurement: Codable, Sendable {
+    package let state: CoverageState
+    package let percent: Double?
+
+    package init(state: CoverageState, percent: Double?) {
+        self.state = state
+        self.percent = percent
+    }
+}
+
 /// Key information for output
 package struct KeyInfo: Codable, Sendable {
     package let key: String
@@ -181,13 +196,13 @@ package struct CoverageInfo: Codable, Sendable {
     package let key: String
     package let translatedLanguages: [String]
     package let missingLanguages: [String]
-    package let coveragePercent: Double
+    package let coverage: CoverageMeasurement
 
-    package init(key: String, translatedLanguages: [String], missingLanguages: [String], coveragePercent: Double) {
+    package init(key: String, translatedLanguages: [String], missingLanguages: [String], coverage: CoverageMeasurement) {
         self.key = key
         self.translatedLanguages = translatedLanguages
         self.missingLanguages = missingLanguages
-        self.coveragePercent = coveragePercent
+        self.coverage = coverage
     }
 }
 
@@ -211,13 +226,13 @@ package struct LanguageStats: Codable, Sendable {
     package let translated: Int
     package let untranslated: Int
     package let total: Int
-    package let coveragePercent: Double
+    package let coverage: CoverageMeasurement
 
-    package init(translated: Int, untranslated: Int, total: Int, coveragePercent: Double) {
+    package init(translated: Int, untranslated: Int, total: Int, coverage: CoverageMeasurement) {
         self.translated = translated
         self.untranslated = untranslated
         self.total = total
-        self.coveragePercent = coveragePercent
+        self.coverage = coverage
     }
 }
 
@@ -236,9 +251,9 @@ package struct BatchCoverageSummary: Codable, Sendable {
 package struct FileCoverageSummary: Codable, Sendable {
     package let file: String
     package let totalKeys: Int
-    package let languages: [String: Double]  // lang -> coveragePercent
+    package let languages: [String: CoverageMeasurement]
 
-    package init(file: String, totalKeys: Int, languages: [String: Double]) {
+    package init(file: String, totalKeys: Int, languages: [String: CoverageMeasurement]) {
         self.file = file
         self.totalKeys = totalKeys
         self.languages = languages
@@ -249,9 +264,9 @@ package struct FileCoverageSummary: Codable, Sendable {
 package struct AggregatedCoverage: Codable, Sendable {
     package let totalFiles: Int
     package let totalKeys: Int
-    package let averageCoverageByLanguage: [String: Double]
+    package let averageCoverageByLanguage: [String: CoverageMeasurement]
 
-    package init(totalFiles: Int, totalKeys: Int, averageCoverageByLanguage: [String: Double]) {
+    package init(totalFiles: Int, totalKeys: Int, averageCoverageByLanguage: [String: CoverageMeasurement]) {
         self.totalFiles = totalFiles
         self.totalKeys = totalKeys
         self.averageCoverageByLanguage = averageCoverageByLanguage
@@ -260,45 +275,75 @@ package struct AggregatedCoverage: Codable, Sendable {
 
 // MARK: - Compact Output Models (100% languages omitted)
 
-/// Compact stats info - only shows languages under 100%
+package enum CompactCompletionState: String, Codable, Sendable {
+    case complete
+    case incomplete
+    case notApplicable
+}
+
+/// Compact stats info - shows incomplete languages and tracks not-applicable ones separately
 package struct CompactStatsInfo: Codable, Sendable {
     package let totalKeys: Int
     package let sourceLanguage: String
     package let totalLanguages: Int
-    package let allComplete: Bool
-    package let incompleteLanguages: [String: LanguageStats]?  // nil if all complete
-    package let completeCount: Int  // number of languages at 100%
+    package let completionState: CompactCompletionState
+    package let incompleteLanguages: [String: LanguageStats]?
+    package let notApplicableLanguages: [String]?
+    package let completeCount: Int
+    package let notApplicableCount: Int
 
     package init(from stats: StatsInfo) {
         self.totalKeys = stats.totalKeys
         self.sourceLanguage = stats.sourceLanguage
         self.totalLanguages = stats.languages.count
 
-        let incomplete = stats.coverageByLanguage.filter { $0.value.coveragePercent < 100 }
-        self.allComplete = incomplete.isEmpty
+        let incomplete = stats.coverageByLanguage.filter { $0.value.coverage.isIncomplete }
+        let notApplicable = stats.coverageByLanguage
+            .filter { $0.value.coverage.isNotApplicable }
+            .keys
+            .sorted()
+        self.completionState = .from(
+            totalLanguages: stats.coverageByLanguage.count,
+            incompleteCount: incomplete.count,
+            notApplicableCount: notApplicable.count
+        )
         self.incompleteLanguages = incomplete.isEmpty ? nil : incomplete
-        self.completeCount = stats.coverageByLanguage.count - incomplete.count
+        self.notApplicableLanguages = notApplicable.isEmpty ? nil : notApplicable
+        self.completeCount = stats.coverageByLanguage.count - incomplete.count - notApplicable.count
+        self.notApplicableCount = notApplicable.count
     }
 }
 
-/// Compact file coverage summary - only shows languages under 100%
+/// Compact file coverage summary - shows incomplete languages and tracks not-applicable ones separately
 package struct CompactFileCoverageSummary: Codable, Sendable {
     package let file: String
     package let totalKeys: Int
     package let totalLanguages: Int
-    package let allComplete: Bool
-    package let incompleteLanguages: [String: Double]?  // nil if all complete
+    package let completionState: CompactCompletionState
+    package let incompleteLanguages: [String: CoverageMeasurement]?
+    package let notApplicableLanguages: [String]?
     package let completeCount: Int
+    package let notApplicableCount: Int
 
     package init(from summary: FileCoverageSummary) {
         self.file = summary.file
         self.totalKeys = summary.totalKeys
         self.totalLanguages = summary.languages.count
 
-        let incomplete = summary.languages.filter { $0.value < 100 }
-        self.allComplete = incomplete.isEmpty
+        let incomplete = summary.languages.filter { $0.value.isIncomplete }
+        let notApplicable = summary.languages
+            .filter { $0.value.isNotApplicable }
+            .keys
+            .sorted()
+        self.completionState = .from(
+            totalLanguages: summary.languages.count,
+            incompleteCount: incomplete.count,
+            notApplicableCount: notApplicable.count
+        )
         self.incompleteLanguages = incomplete.isEmpty ? nil : incomplete
-        self.completeCount = summary.languages.count - incomplete.count
+        self.notApplicableLanguages = notApplicable.isEmpty ? nil : notApplicable
+        self.completeCount = summary.languages.count - incomplete.count - notApplicable.count
+        self.notApplicableCount = notApplicable.count
     }
 }
 
@@ -318,19 +363,67 @@ package struct CompactAggregatedCoverage: Codable, Sendable {
     package let totalFiles: Int
     package let totalKeys: Int
     package let totalLanguages: Int
-    package let allComplete: Bool
-    package let incompleteLanguages: [String: Double]?
+    package let completionState: CompactCompletionState
+    package let incompleteLanguages: [String: CoverageMeasurement]?
+    package let notApplicableLanguages: [String]?
     package let completeCount: Int
+    package let notApplicableCount: Int
 
     package init(from agg: AggregatedCoverage) {
         self.totalFiles = agg.totalFiles
         self.totalKeys = agg.totalKeys
         self.totalLanguages = agg.averageCoverageByLanguage.count
 
-        let incomplete = agg.averageCoverageByLanguage.filter { $0.value < 100 }
-        self.allComplete = incomplete.isEmpty
+        let incomplete = agg.averageCoverageByLanguage.filter { $0.value.isIncomplete }
+        let notApplicable = agg.averageCoverageByLanguage
+            .filter { $0.value.isNotApplicable }
+            .keys
+            .sorted()
+        self.completionState = .from(
+            totalLanguages: agg.averageCoverageByLanguage.count,
+            incompleteCount: incomplete.count,
+            notApplicableCount: notApplicable.count
+        )
         self.incompleteLanguages = incomplete.isEmpty ? nil : incomplete
-        self.completeCount = agg.averageCoverageByLanguage.count - incomplete.count
+        self.notApplicableLanguages = notApplicable.isEmpty ? nil : notApplicable
+        self.completeCount = agg.averageCoverageByLanguage.count - incomplete.count - notApplicable.count
+        self.notApplicableCount = notApplicable.count
+    }
+}
+
+package extension CompactCompletionState {
+    static func from(totalLanguages: Int, incompleteCount: Int, notApplicableCount: Int) -> CompactCompletionState {
+        if totalLanguages == 0 || notApplicableCount == totalLanguages {
+            return .notApplicable
+        }
+
+        if incompleteCount > 0 {
+            return .incomplete
+        }
+
+        return .complete
+    }
+}
+
+package extension CoverageMeasurement {
+    static func measured(_ percent: Double) -> CoverageMeasurement {
+        CoverageMeasurement(state: .measured, percent: percent)
+    }
+
+    static var notApplicable: CoverageMeasurement {
+        CoverageMeasurement(state: .notApplicable, percent: nil)
+    }
+
+    var isComplete: Bool {
+        state == .measured && percent == 100
+    }
+
+    var isIncomplete: Bool {
+        state == .measured && (percent ?? 0) < 100
+    }
+
+    var isNotApplicable: Bool {
+        state == .notApplicable
     }
 }
 

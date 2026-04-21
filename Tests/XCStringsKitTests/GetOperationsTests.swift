@@ -89,4 +89,31 @@ struct GetOperationsTests {
         #expect(keyInfo.translations.count == 1)
         #expect(keyInfo.translations["ja"]?.value == "こんにちは")
     }
+
+    @Test("getKey returns metadata when requested language is absent")
+    func getKeyMissingLanguageStillReturnsMetadata() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let keyInfo = try await parser.getKey("BrandName", language: "ja")
+
+        #expect(keyInfo.key == "BrandName")
+        #expect(keyInfo.comment == "Proper noun shown as-is in every locale")
+        #expect(keyInfo.shouldTranslate == false)
+        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.translations.isEmpty)
+    }
+
+    @Test("getKey throws when requested language is absent for translatable key")
+    func getKeyMissingLanguageThrowsForTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+
+        await #expect(throws: XCStringsError.self) {
+            _ = try await parser.getKey("Hello", language: "fr")
+        }
+    }
 }

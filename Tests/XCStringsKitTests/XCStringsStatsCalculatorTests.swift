@@ -47,18 +47,24 @@ struct XCStringsStatsCalculatorTests {
 
         let stats = calculator.getStats()
 
-        #expect(stats.coverageByLanguage["en"]?.coveragePercent == 100.0)
-        #expect(stats.coverageByLanguage["ja"]?.coveragePercent == 100.0)
+        #expect(stats.coverageByLanguage["en"]?.coverage.state == .measured)
+        #expect(stats.coverageByLanguage["en"]?.coverage.percent == 100.0)
+        #expect(stats.coverageByLanguage["ja"]?.coverage.state == .measured)
+        #expect(stats.coverageByLanguage["ja"]?.coverage.percent == 100.0)
     }
 
-    @Test("getStats returns zero for empty file")
+    @Test("getStats marks empty files as notApplicable")
     func getStatsEmpty() throws {
         let file = try loadFixture(TestFixtures.empty)
         let calculator = XCStringsStatsCalculator(file: file)
 
         let stats = calculator.getStats()
+        let sourceStats = try #require(stats.coverageByLanguage["en"])
 
         #expect(stats.totalKeys == 0)
+        #expect(sourceStats.total == 0)
+        #expect(sourceStats.coverage.state == .notApplicable)
+        #expect(sourceStats.coverage.percent == nil)
     }
 
     @Test("getStats calculates partial coverage correctly")
@@ -88,7 +94,8 @@ struct XCStringsStatsCalculatorTests {
 
         #expect(progress.translated == 1)
         #expect(progress.total == 1)
-        #expect(progress.coveragePercent == 100.0)
+        #expect(progress.coverage.state == .measured)
+        #expect(progress.coverage.percent == 100.0)
     }
 
     @Test("getProgress throws for non-existent language")
@@ -110,6 +117,77 @@ struct XCStringsStatsCalculatorTests {
 
         #expect(progress.untranslated > 0)
         #expect(progress.total == progress.translated + progress.untranslated)
+    }
+
+    @Test("getBatchCoverage keeps non-applicable coverage explicit")
+    func getBatchCoverageNotApplicable() throws {
+        let emptyFile = try loadFixture(TestFixtures.empty)
+        let batchCoverage = XCStringsStatsCalculator.getBatchCoverage(files: [
+            ("Empty.xcstrings", emptyFile)
+        ])
+
+        let aggregated = try #require(batchCoverage.aggregated.averageCoverageByLanguage["en"])
+        let fileCoverage = try #require(batchCoverage.files.first?.languages["en"])
+
+        #expect(aggregated.state == .notApplicable)
+        #expect(aggregated.percent == nil)
+        #expect(fileCoverage.state == .notApplicable)
+        #expect(fileCoverage.percent == nil)
+    }
+
+    @Test("getCompactStats reports incomplete state when translations are missing")
+    func getCompactStatsIncomplete() throws {
+        let file = try loadFixture(TestFixtures.multipleKeysPartialTranslations)
+        let compactStats = XCStringsStatsCalculator(file: file).getCompactStats()
+
+        #expect(compactStats.completionState == .incomplete)
+        #expect(compactStats.incompleteLanguages?.isEmpty == false)
+    }
+
+    @Test("getCompactStats reports notApplicable state for empty files")
+    func getCompactStatsEmpty() throws {
+        let file = try loadFixture(TestFixtures.empty)
+        let compactStats = XCStringsStatsCalculator(file: file).getCompactStats()
+
+        #expect(compactStats.completionState == .notApplicable)
+        #expect(compactStats.notApplicableLanguages == ["en"])
+    }
+
+    @Test("getCompactStats reports notApplicable state for non-translatable-only files")
+    func getCompactStatsNonTranslatableOnly() throws {
+        let file = try loadFixture("""
+        {
+          "sourceLanguage": "en",
+          "strings": {
+            "BrandName": {
+              "comment": "Proper noun shown as-is in every locale",
+              "shouldTranslate": false
+            }
+          },
+          "version": "1.0"
+        }
+        """)
+        let compactStats = XCStringsStatsCalculator(file: file).getCompactStats()
+
+        #expect(compactStats.completionState == .notApplicable)
+        #expect(compactStats.notApplicableLanguages == ["en"])
+    }
+
+    @Test("getCompactBatchCoverage reports tri-state completion")
+    func getCompactBatchCoverageStates() throws {
+        let emptyFile = try loadFixture(TestFixtures.empty)
+        let partialFile = try loadFixture(TestFixtures.multipleKeysPartialTranslations)
+        let compactBatch = XCStringsStatsCalculator.getCompactBatchCoverage(files: [
+            ("Empty.xcstrings", emptyFile),
+            ("Partial.xcstrings", partialFile)
+        ])
+
+        let emptySummary = try #require(compactBatch.files.first)
+        let partialSummary = try #require(compactBatch.files.last)
+
+        #expect(emptySummary.completionState == .notApplicable)
+        #expect(partialSummary.completionState == .incomplete)
+        #expect(compactBatch.aggregated.completionState == .incomplete)
     }
 
     // MARK: - Helper

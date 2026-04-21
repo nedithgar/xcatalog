@@ -104,6 +104,29 @@ struct XCStringsReaderTests {
         #expect(info.translations.isEmpty)
     }
 
+    @Test("getKey keeps metadata when filtered language is missing")
+    func getKeyMissingFilteredLanguage() throws {
+        let file = try loadFixture(TestFixtures.withNonTranslatableKey)
+        let reader = XCStringsReader(file: file)
+
+        let info = try reader.getKey("BrandName", language: "ja")
+
+        #expect(info.comment == "Proper noun shown as-is in every locale")
+        #expect(info.shouldTranslate == false)
+        #expect(info.languages.isEmpty)
+        #expect(info.translations.isEmpty)
+    }
+
+    @Test("getKey throws when filtered language is missing for translatable key")
+    func getKeyMissingFilteredLanguageThrowsForTranslatableKey() throws {
+        let file = try loadFixture(TestFixtures.withNonTranslatableKey)
+        let reader = XCStringsReader(file: file)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try reader.getKey("Hello", language: "fr")
+        }
+    }
+
     @Test("getKey throws for non-existent key")
     func getKeyNotFound() throws {
         let file = try loadFixture(TestFixtures.empty)
@@ -181,19 +204,21 @@ struct XCStringsReaderTests {
 
         #expect(coverage.key == "Hello")
         #expect(coverage.translatedLanguages.count == 3)
-        #expect(coverage.coveragePercent == 100.0)
+        #expect(coverage.coverage.state == .measured)
+        #expect(coverage.coverage.percent == 100.0)
     }
 
-    @Test("checkCoverage returns complete coverage for non-translatable key")
+    @Test("checkCoverage returns notApplicable coverage for non-translatable key")
     func checkCoverageNonTranslatable() throws {
         let file = try loadFixture(TestFixtures.withNonTranslatableKey)
         let reader = XCStringsReader(file: file)
 
         let coverage = try reader.checkCoverage("BrandName")
 
-        #expect(coverage.coveragePercent == 100.0)
+        #expect(coverage.coverage.state == .notApplicable)
+        #expect(coverage.coverage.percent == nil)
         #expect(coverage.missingLanguages.isEmpty)
-        #expect(coverage.translatedLanguages == ["en", "ja"])
+        #expect(coverage.translatedLanguages.isEmpty)
     }
 
     // MARK: - Helper

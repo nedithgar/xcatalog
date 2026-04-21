@@ -50,7 +50,7 @@ struct XCStringsReader: Sendable {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        let translations = try translations(for: key, entry: entry, language: language)
+        let translations = try keyInfoTranslations(for: key, entry: entry, language: language)
         let languages = translations.keys.sorted()
 
         return KeyInfo(
@@ -70,7 +70,7 @@ struct XCStringsReader: Sendable {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        return try translations(for: key, entry: entry, language: language)
+        return try strictTranslations(for: key, entry: entry, language: language)
     }
 
     /// Check if a key exists
@@ -103,28 +103,50 @@ struct XCStringsReader: Sendable {
         if !entry.requiresTranslation {
             return CoverageInfo(
                 key: key,
-                translatedLanguages: allLanguages,
+                translatedLanguages: [],
                 missingLanguages: [],
-                coveragePercent: 100.0
+                coverage: .notApplicable
             )
         }
 
         let translatedLanguages = entry.localizations?.keys.sorted() ?? []
         let missingLanguages = allLanguages.filter { !translatedLanguages.contains($0) }
-        let coveragePercent = allLanguages.isEmpty ? 0 : Double(translatedLanguages.count) / Double(allLanguages.count) * 100
+        let coverage = CoverageMeasurement.measured(
+            allLanguages.isEmpty ? 0 : Double(translatedLanguages.count) / Double(allLanguages.count) * 100
+        )
 
         return CoverageInfo(
             key: key,
             translatedLanguages: translatedLanguages,
             missingLanguages: missingLanguages,
-            coveragePercent: coveragePercent
+            coverage: coverage
         )
     }
 
-    private func translations(for key: String, entry: StringEntry, language: String?) throws -> [String: TranslationInfo] {
+    private func strictTranslations(for key: String, entry: StringEntry, language: String?) throws -> [String: TranslationInfo] {
         if let lang = language {
             guard let localization = entry.localizations?[lang] else {
                 throw XCStringsError.languageNotFound(language: lang, key: key)
+            }
+
+            return [lang: translationInfo(for: key, language: lang, localization: localization)]
+        }
+
+        return filteredTranslations(for: key, entry: entry, language: nil)
+    }
+
+    private func keyInfoTranslations(for key: String, entry: StringEntry, language: String?) throws -> [String: TranslationInfo] {
+        guard entry.requiresTranslation else {
+            return filteredTranslations(for: key, entry: entry, language: language)
+        }
+
+        return try strictTranslations(for: key, entry: entry, language: language)
+    }
+
+    private func filteredTranslations(for key: String, entry: StringEntry, language: String?) -> [String: TranslationInfo] {
+        if let lang = language {
+            guard let localization = entry.localizations?[lang] else {
+                return [:]
             }
 
             return [lang: translationInfo(for: key, language: lang, localization: localization)]

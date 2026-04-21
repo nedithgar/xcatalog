@@ -35,7 +35,15 @@ swift build -c release # Release build
 ## Testing
 
 ```bash
-swift test --filter XCStringsKitTests  # Run specific test target
+swift test --filter XCStringsKitTests  # Run core library tests
+swift test --filter XCStringsMCPTests  # Run MCP handler and integration tests
 ```
 
-Tests use fixture-based approach. See `TestFixtures.swift` for test data generation.
+Tests use fixture-based approach. See `TestFixtures.swift` and `Tests/XCStringsMCPTests/TestSupport.swift` for test data generation.
+
+## Behavior Notes
+
+- `get key` returns `KeyInfo` metadata together with `translations`, not just translation values.
+- Keys with `shouldTranslate: false` are excluded from untranslated lists and coverage/progress totals.
+- Coverage and progress outputs use `CoverageMeasurement` with `state` (`measured` or `notApplicable`) and optional `percent`.
+- Compact coverage summaries expose `completionState`, `incompleteLanguages`, and `notApplicableLanguages`.
