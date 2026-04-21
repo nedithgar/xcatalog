@@ -186,6 +186,39 @@ enum TestFixtures {
     }
     """
 
+    /// File where a locale appears only on a non-translatable key
+    static let withLocaleOnlyOnNonTranslatableKey = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "BrandName": {
+          "comment": "Proper noun shown as-is in every locale",
+          "shouldTranslate": false,
+          "localizations": {
+            "ja": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "BrandName"
+              }
+            }
+          }
+        },
+        "Hello": {
+          "comment": "Greeting",
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Hello"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
     /// Different source language (Japanese)
     static let japaneseSource = """
     {

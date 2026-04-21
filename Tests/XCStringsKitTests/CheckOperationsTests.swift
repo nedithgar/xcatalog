@@ -48,6 +48,20 @@ struct CheckOperationsTests {
         #expect(exists == expected)
     }
 
+    @Test("checkKey with language recognizes non-translatable keys")
+    func checkKeyWithLanguageNonTranslatable() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let exists = try await parser.checkKey("BrandName", language: "ja")
+        let keyInfo = try await parser.getKey("BrandName", language: "ja")
+
+        #expect(exists == true)
+        #expect(keyInfo.shouldTranslate == false)
+        #expect(keyInfo.translations.isEmpty)
+    }
+
     @Test("checkCoverage returns correct coverage", arguments: [
         (FixtureType.singleKeyMultipleLangs, "Hello", 3, 0),
         (FixtureType.multipleKeysPartialTranslations, "Hello", 2, 1),
@@ -77,6 +91,20 @@ struct CheckOperationsTests {
         #expect(coverage.coverage.percent == nil)
         #expect(coverage.missingLanguages.isEmpty)
         #expect(coverage.translatedLanguages.isEmpty)
+    }
+
+    @Test("checkCoverage ignores locales used only by non-translatable keys")
+    func checkCoverageIgnoresLocaleOnlyOnNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let coverage = try await parser.checkCoverage("Hello")
+
+        #expect(coverage.translatedLanguages == ["en"])
+        #expect(coverage.missingLanguages.isEmpty)
+        #expect(coverage.coverage.state == .measured)
+        #expect(coverage.coverage.percent == 100.0)
     }
 
         @Test("checkCoverage ignores empty localization shells")
