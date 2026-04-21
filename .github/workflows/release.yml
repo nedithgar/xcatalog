@@ -78,6 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${TAG_NAME}" \
+            --clobber \
             ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64.tar.gz" \
             ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64.tar.gz" \
             ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" \
