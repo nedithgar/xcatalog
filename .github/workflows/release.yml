@@ -27,34 +27,42 @@ jobs:
             .build/x86_64-apple-macosx/release/xcstrings-crud \
             -output .build/universal/xcstrings-crud
 
-      - name: Create Archive
+      - name: Stage Release Assets
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          cd .build/universal
-          tar -czvf "xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" xcstrings-crud
-
-      - name: Create Artifact Bundle
-        uses: giginet/github-action-artifactbundle@v2
-        id: artifactbundle
-        with:
-          artifact_name: xcstrings-crud
+          mkdir -p .build/release-assets
+          cp \
+            .build/arm64-apple-macosx/release/xcstrings-crud \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64"
+          cp \
+            .build/x86_64-apple-macosx/release/xcstrings-crud \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64"
+          cp \
+            .build/universal/xcstrings-crud \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal"
+          chmod +x \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64" \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64" \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal"
 
       - name: Generate Checksums
         env:
-          BUNDLE_PATH: ${{ steps.artifactbundle.outputs.bundle_path }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          cd .build/universal
-          cp "${BUNDLE_PATH}" .
-          shasum -a 256 *.tar.gz *.artifactbundle.zip > checksums.txt
+          cd .build/release-assets
+          shasum -a 256 \
+            "xcstrings-crud-${TAG_NAME}-darwin-arm64" \
+            "xcstrings-crud-${TAG_NAME}-darwin-x86_64" \
+            "xcstrings-crud-${TAG_NAME}-darwin-universal" > checksums.txt
 
       - name: Upload Release Assets
         env:
           TAG_NAME: ${{ github.ref_name }}
-          BUNDLE_FILENAME: ${{ steps.artifactbundle.outputs.bundle_filename }}
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${TAG_NAME}" \
-            ".build/universal/xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" \
-            ".build/universal/${BUNDLE_FILENAME}" \
-            ".build/universal/checksums.txt"
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64" \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64" \
+            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal" \
+            ".build/release-assets/checksums.txt"
