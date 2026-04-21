@@ -42,4 +42,86 @@ struct StatsOperationsTests {
         #expect(progress.translated == translated)
         #expect(progress.untranslated == untranslated)
     }
+
+    @Test("getStats excludes non-translatable keys from coverage totals")
+    func getStatsExcludesNonTranslatableKeys() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let stats = try await parser.getStats()
+        let jaStats = try #require(stats.coverageByLanguage["ja"])
+
+        #expect(stats.totalKeys == 2)
+        #expect(jaStats.translated == 1)
+        #expect(jaStats.untranslated == 0)
+        #expect(jaStats.total == 1)
+        #expect(jaStats.coverage.state == .measured)
+        #expect(jaStats.coverage.percent == 100.0)
+    }
+
+    @Test("getProgress excludes non-translatable keys from totals")
+    func getProgressExcludesNonTranslatableKeys() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let progress = try await parser.getProgress(for: "ja")
+
+        #expect(progress.translated == 1)
+        #expect(progress.untranslated == 0)
+        #expect(progress.total == 1)
+        #expect(progress.coverage.state == .measured)
+        #expect(progress.coverage.percent == 100.0)
+    }
+
+    @Test("getStats marks locales used only by non-translatable keys as notApplicable")
+    func getStatsLocaleOnlyOnNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let stats = try await parser.getStats()
+        let enStats = try #require(stats.coverageByLanguage["en"])
+        let jaStats = try #require(stats.coverageByLanguage["ja"])
+
+        #expect(enStats.translated == 1)
+        #expect(enStats.untranslated == 0)
+        #expect(enStats.total == 1)
+        #expect(enStats.coverage.state == .measured)
+        #expect(enStats.coverage.percent == 100.0)
+
+        #expect(jaStats.translated == 0)
+        #expect(jaStats.untranslated == 0)
+        #expect(jaStats.total == 0)
+        #expect(jaStats.coverage.state == .notApplicable)
+        #expect(jaStats.coverage.percent == nil)
+    }
+
+    @Test("getProgress marks empty files as notApplicable")
+    func getProgressEmptyFile() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let progress = try await parser.getProgress(for: "en")
+
+        #expect(progress.translated == 0)
+        #expect(progress.untranslated == 0)
+        #expect(progress.total == 0)
+        #expect(progress.coverage.state == .notApplicable)
+        #expect(progress.coverage.percent == nil)
+    }
+
+    @Test("getCompactStats reports tri-state completion for empty files")
+    func getCompactStatsEmptyFile() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let compactStats = try await parser.getCompactStats()
+
+        #expect(compactStats.completionState == .notApplicable)
+        #expect(compactStats.notApplicableLanguages == ["en"])
+    }
 }

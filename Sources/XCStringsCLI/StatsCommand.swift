@@ -23,7 +23,7 @@ extension StatsCommand {
         @Flag(name: .long, help: "Output in pretty-printed JSON format")
         var pretty = false
 
-        @Flag(name: .long, help: "Compact output: only show languages under 100%")
+        @Flag(name: .long, help: "Compact output: show incomplete languages and surface not-applicable ones separately")
         var compact = false
 
         func run() async throws {
@@ -72,7 +72,7 @@ extension StatsCommand {
         @Flag(name: .long, help: "Output in pretty-printed JSON format")
         var pretty = false
 
-        @Flag(name: .long, help: "Compact output: only show languages under 100%")
+        @Flag(name: .long, help: "Compact output: show incomplete languages and surface not-applicable ones separately")
         var compact = false
 
         func validate() throws {

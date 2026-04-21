@@ -47,5 +47,13 @@ let package = Package(
             name: "XCStringsKitTests",
             dependencies: ["XCStringsKit"]
         ),
+        .testTarget(
+            name: "XCStringsMCPTests",
+            dependencies: [
+                "XCStringsMCP",
+                "XCStringsKit",
+                .product(name: "MCP", package: "swift-sdk"),
+            ]
+        ),
     ]
 )

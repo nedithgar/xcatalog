@@ -65,9 +65,9 @@ package actor XCStringsParser {
     }
 
     /// Get key information
-    package func getKey(_ key: String) throws -> KeyInfo {
+    package func getKey(_ key: String, language: String? = nil) throws -> KeyInfo {
         let file = try load()
-        return try XCStringsReader(file: file).getKey(key)
+        return try XCStringsReader(file: file).getKey(key, language: language)
     }
 
     /// Get translation for a key

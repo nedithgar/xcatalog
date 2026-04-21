@@ -54,4 +54,20 @@ struct UpdateOperationsTests {
             try await parser.updateTranslation(key: key, language: language, value: "Value")
         }
     }
+
+    @Test("updateTranslation rejects non-translatable keys even when localizations exist")
+    func updateTranslationRejectsNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+
+        await #expect(throws: XCStringsError.self) {
+            try await parser.updateTranslation(key: "BrandName", language: "ja", value: "更新済み")
+        }
+
+        let keyInfo = try await parser.getKey("BrandName")
+        #expect(keyInfo.shouldTranslate == false)
+        #expect(keyInfo.translations["ja"]?.value == "BrandName")
+    }
 }
