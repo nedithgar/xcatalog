@@ -78,4 +78,40 @@ struct CheckOperationsTests {
         #expect(coverage.missingLanguages.isEmpty)
         #expect(coverage.translatedLanguages.isEmpty)
     }
+
+        @Test("checkCoverage ignores empty localization shells")
+        func checkCoverageIgnoresEmptyLocalizationShells() async throws {
+                let fixture = """
+                {
+                    "sourceLanguage": "en",
+                    "strings": {
+                        "Hello": {
+                            "localizations": {
+                                "en": {
+                                    "stringUnit": {
+                                        "state": "translated",
+                                        "value": "Hello"
+                                    }
+                                },
+                                "ja": {}
+                            }
+                        }
+                    },
+                    "version": "1.0"
+                }
+                """
+
+                let path = try TestHelper.createTempFile(content: fixture)
+                defer { TestHelper.removeTempFile(at: path) }
+
+                let parser = XCStringsParser(path: path)
+                let coverage = try await parser.checkCoverage("Hello")
+                let untranslated = try await parser.listUntranslated(for: "ja")
+
+                #expect(coverage.translatedLanguages == ["en"])
+                #expect(coverage.missingLanguages == ["ja"])
+                #expect(coverage.coverage.state == .measured)
+                #expect(coverage.coverage.percent == 50.0)
+                #expect(untranslated == ["Hello"])
+        }
 }
