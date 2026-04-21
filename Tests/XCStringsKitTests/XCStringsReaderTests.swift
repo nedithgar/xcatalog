@@ -125,7 +125,7 @@ struct XCStringsReaderTests {
         let info = try reader.getKey("Hello", language: "fr")
 
         #expect(info.comment == "Greeting")
-        #expect(info.languages.isEmpty)
+        #expect(info.languages == ["en", "ja"])
         #expect(info.translations.isEmpty)
     }
 
@@ -202,6 +202,33 @@ struct XCStringsReaderTests {
 
         #expect(reader.checkKey("BrandName", language: "ja") == true)
         #expect(reader.checkKey("BrandName", language: "fr") == false)
+    }
+
+    @Test("checkKey with language ignores empty localization shells")
+    func checkKeyWithLanguageEmptyLocalizationShell() throws {
+        let file = try loadFixture("""
+        {
+          "sourceLanguage": "en",
+          "strings": {
+            "Hello": {
+              "localizations": {
+                "en": {
+                  "stringUnit": {
+                    "state": "translated",
+                    "value": "Hello"
+                  }
+                },
+                "ja": {}
+              }
+            }
+          },
+          "version": "1.0"
+        }
+        """)
+        let reader = XCStringsReader(file: file)
+
+        #expect(reader.checkKey("Hello", language: "en") == true)
+        #expect(reader.checkKey("Hello", language: "ja") == false)
     }
 
     // MARK: - checkCoverage

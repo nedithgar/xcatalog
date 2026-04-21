@@ -187,7 +187,7 @@ struct ToolHandlerIntegrationTests {
 
         #expect(keyInfo.key == "Hello")
         #expect(keyInfo.comment == "Greeting")
-        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.languages == ["en", "ja"])
         #expect(keyInfo.translations.isEmpty)
     }
 
@@ -230,6 +230,40 @@ struct ToolHandlerIntegrationTests {
         let context = ToolContext(arguments: ToolArguments(raw: [
             "file": .string(path),
             "key": .string("BrandName"),
+            "language": .string("ja")
+        ]))
+
+        let result = try await handler.execute(with: context)
+        #expect(result == "false")
+    }
+
+    @Test("CheckKeyHandler treats empty localization shells as missing")
+    func checkKeyHandlerEmptyLocalizationShell() async throws {
+        let path = try TestHelper.createTempFile(content: """
+        {
+          "sourceLanguage": "en",
+          "strings": {
+            "Hello": {
+              "localizations": {
+                "en": {
+                  "stringUnit": {
+                    "state": "translated",
+                    "value": "Hello"
+                  }
+                },
+                "ja": {}
+              }
+            }
+          },
+          "version": "1.0"
+        }
+        """)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = CheckKeyHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("Hello"),
             "language": .string("ja")
         ]))
 

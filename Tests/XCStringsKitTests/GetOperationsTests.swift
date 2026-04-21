@@ -85,7 +85,7 @@ struct GetOperationsTests {
         let keyInfo = try await parser.getKey("Hello", language: "ja")
 
         #expect(keyInfo.comment == "Greeting")
-        #expect(keyInfo.languages == ["ja"])
+        #expect(keyInfo.languages == ["en", "ja"])
         #expect(keyInfo.translations.count == 1)
         #expect(keyInfo.translations["ja"]?.value == "こんにちは")
     }
@@ -115,7 +115,7 @@ struct GetOperationsTests {
 
         #expect(keyInfo.key == "Hello")
         #expect(keyInfo.comment == "Greeting")
-        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.languages == ["en", "ja"])
         #expect(keyInfo.translations.isEmpty)
     }
 }

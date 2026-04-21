@@ -146,9 +146,11 @@ struct CheckOperationsTests {
             defer { TestHelper.removeTempFile(at: path) }
 
             let parser = XCStringsParser(path: path)
+            let exists = try await parser.checkKey("Hello", language: "ja")
             let coverage = try await parser.checkCoverage("Hello")
             let untranslated = try await parser.listUntranslated(for: "ja")
 
+            #expect(exists == false)
             #expect(coverage.translatedLanguages == ["en"])
             #expect(coverage.missingLanguages == ["ja"])
             #expect(coverage.coverage.state == .measured)

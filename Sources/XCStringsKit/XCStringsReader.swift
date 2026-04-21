@@ -62,7 +62,7 @@ struct XCStringsReader: Sendable {
         }
 
         let translations = keyInfoTranslations(for: key, entry: entry, language: language)
-        let languages = translations.keys.sorted()
+        let languages = entry.localizations?.keys.sorted() ?? []
 
         return KeyInfo(
             key: key,
@@ -91,7 +91,7 @@ struct XCStringsReader: Sendable {
         }
 
         if let lang = language {
-            return entry.localizations?[lang] != nil
+            return entry.hasConcreteLocalization(for: lang)
         }
 
         return true

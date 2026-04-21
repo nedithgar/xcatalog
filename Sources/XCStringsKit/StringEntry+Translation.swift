@@ -9,19 +9,27 @@ enum StringEntryTranslationSemantics {
         entry.shouldTranslate != false
     }
 
+    static func hasConcreteLocalization(_ entry: StringEntry, for language: String) -> Bool {
+        let localization = entry.localizations?[language]
+        return localization?.stringUnit?.value != nil || localization?.variations != nil
+    }
+
     static func countsAsTranslated(_ entry: StringEntry, for language: String) -> Bool {
         guard requiresTranslation(entry) else {
             return true
         }
 
-        let localization = entry.localizations?[language]
-        return localization?.stringUnit?.value != nil || localization?.variations != nil
+        return hasConcreteLocalization(entry, for: language)
     }
 }
 
 extension StringEntry {
     var requiresTranslation: Bool {
         StringEntryTranslationSemantics.requiresTranslation(self)
+    }
+
+    func hasConcreteLocalization(for language: String) -> Bool {
+        StringEntryTranslationSemantics.hasConcreteLocalization(self, for: language)
     }
 
     func countsAsTranslated(for language: String) -> Bool {
