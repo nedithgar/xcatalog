@@ -44,6 +44,15 @@ struct XCStringsWriterTests {
         #expect(file.strings["Hello"]?.localizations?["en"]?.stringUnit?.value == "Updated")
     }
 
+    @Test("addTranslation rejects non-translatable keys")
+    func addTranslationRejectsNonTranslatableKey() throws {
+        let file = try loadFixture(TestFixtures.withNonTranslatableKey)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(to: file, key: "BrandName", language: "ja", value: "ブランド名")
+        }
+    }
+
     // MARK: - addTranslations
 
     @Test("addTranslations adds multiple languages")
@@ -59,6 +68,15 @@ struct XCStringsWriterTests {
         #expect(file.strings["Greeting"]?.localizations?["en"]?.stringUnit?.value == "Hello")
         #expect(file.strings["Greeting"]?.localizations?["ja"]?.stringUnit?.value == "こんにちは")
         #expect(file.strings["Greeting"]?.localizations?["de"]?.stringUnit?.value == "Hallo")
+    }
+
+    @Test("addTranslations rejects non-translatable keys")
+    func addTranslationsRejectNonTranslatableKey() throws {
+        let file = try loadFixture(TestFixtures.withNonTranslatableKey)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslations(to: file, key: "BrandName", translations: ["ja": "ブランド名"])
+        }
     }
 
     // MARK: - updateTranslation
@@ -87,6 +105,15 @@ struct XCStringsWriterTests {
 
         #expect(throws: XCStringsError.self) {
             _ = try XCStringsWriter.updateTranslation(in: file, key: "Hello", language: "ja", value: "Value")
+        }
+    }
+
+    @Test("updateTranslation rejects non-translatable keys")
+    func updateTranslationRejectsNonTranslatableKey() throws {
+        let file = try loadFixture(TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslation(in: file, key: "BrandName", language: "ja", value: "更新済み")
         }
     }
 
@@ -122,6 +149,15 @@ struct XCStringsWriterTests {
 
         #expect(throws: XCStringsError.self) {
             _ = try XCStringsWriter.updateTranslations(in: file, key: "Hello", translations: ["fr": "Bonjour"])
+        }
+    }
+
+    @Test("updateTranslations rejects non-translatable keys")
+    func updateTranslationsRejectNonTranslatableKey() throws {
+        let file = try loadFixture(TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslations(in: file, key: "BrandName", translations: ["ja": "更新済み"])
         }
     }
 

@@ -262,4 +262,50 @@ struct BatchOperationsTests {
         #expect(keys.contains("NewKey2"))
         #expect(keys.contains("Hello"))
     }
+
+    @Test("batch add fails entries targeting non-translatable keys")
+    func addTranslationsBatchRejectsNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "BrandName", translations: ["ja": "ブランド名"]),
+            BatchTranslationEntry(key: "Hello", translations: ["de": "Hallo"]),
+        ]
+
+        let result = try await parser.addTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.failedCount == 1)
+        #expect(result.succeeded == ["Hello"])
+        #expect(result.failed[0].key == "BrandName")
+
+        let brandKey = try await parser.getKey("BrandName")
+        #expect(brandKey.shouldTranslate == false)
+        #expect(brandKey.translations.isEmpty)
+    }
+
+    @Test("batch update fails entries targeting non-translatable keys")
+    func updateTranslationsBatchRejectsNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "BrandName", translations: ["ja": "更新済み"]),
+            BatchTranslationEntry(key: "Hello", translations: ["en": "Hi"]),
+        ]
+
+        let result = try await parser.updateTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.failedCount == 1)
+        #expect(result.succeeded == ["Hello"])
+        #expect(result.failed[0].key == "BrandName")
+
+        let brandKey = try await parser.getKey("BrandName")
+        #expect(brandKey.shouldTranslate == false)
+        #expect(brandKey.translations["ja"]?.value == "BrandName")
+    }
 }

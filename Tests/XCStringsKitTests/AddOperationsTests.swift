@@ -74,4 +74,20 @@ struct AddOperationsTests {
             try await parser.addTranslation(key: key, language: language, value: "New Value")
         }
     }
+
+    @Test("addTranslation rejects non-translatable keys")
+    func addTranslationRejectsNonTranslatableKey() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+
+        await #expect(throws: XCStringsError.self) {
+            try await parser.addTranslation(key: "BrandName", language: "ja", value: "ブランド名")
+        }
+
+        let keyInfo = try await parser.getKey("BrandName")
+        #expect(keyInfo.shouldTranslate == false)
+        #expect(keyInfo.translations.isEmpty)
+    }
 }

@@ -221,6 +221,7 @@ xcstrings-crud batch update --file path/to/Localizable.xcstrings \
 - Passing `--lang` or `language` filters the `translations` payload to that locale while keeping the key metadata in the response.
 - Coverage and progress commands now return a `coverage` object with `state` (`measured` or `notApplicable`) and `percent` instead of a top-level `coveragePercent` field.
 - Keys marked with `shouldTranslate: false` are excluded from untranslated lists and coverage totals. If a key, language, or file has no translatable content, coverage is reported as `notApplicable`.
+- Add and update commands reject localization writes to keys marked `shouldTranslate: false` so coverage and write behavior stay consistent.
 - Compact coverage outputs use `completionState` and may include `incompleteLanguages` and `notApplicableLanguages`.
 
 ## Requirements

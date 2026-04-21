@@ -12,6 +12,8 @@ enum XCStringsWriter {
     ) throws -> XCStringsFile {
         var result = file
 
+        try validateTranslationWrite(for: key, in: result)
+
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
         }
@@ -39,6 +41,8 @@ enum XCStringsWriter {
         allowOverwrite: Bool = false
     ) throws -> XCStringsFile {
         var result = file
+
+        try validateTranslationWrite(for: key, in: result)
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -74,6 +78,8 @@ enum XCStringsWriter {
             throw XCStringsError.keyNotFound(key: key)
         }
 
+        try validateTranslationWrite(for: key, in: result)
+
         guard result.strings[key]?.localizations?[language] != nil else {
             throw XCStringsError.languageNotFound(language: language, key: key)
         }
@@ -96,6 +102,8 @@ enum XCStringsWriter {
         guard result.strings[key] != nil else {
             throw XCStringsError.keyNotFound(key: key)
         }
+
+        try validateTranslationWrite(for: key, in: result)
 
         for (language, value) in translations {
             guard result.strings[key]?.localizations?[language] != nil else {
@@ -244,5 +252,11 @@ enum XCStringsWriter {
         }
 
         return (result, BatchWriteResult(succeeded: succeeded, failed: failed))
+    }
+
+    private static func validateTranslationWrite(for key: String, in file: XCStringsFile) throws {
+        guard file.strings[key]?.shouldTranslate != false else {
+            throw XCStringsError.nonTranslatableKey(key: key)
+        }
     }
 }
