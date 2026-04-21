@@ -13,9 +13,21 @@ struct XCStringsStatsCalculator: Sendable {
     /// Get overall statistics
     func getStats() -> StatsInfo {
         let allLanguages = reader.listLanguages()
+        let translatableLanguages = Set(reader.listTranslatableLanguages())
         let translatableEntries = file.strings.values.filter(\.requiresTranslation)
 
         let coverageByLanguage = Dictionary(uniqueKeysWithValues: allLanguages.lazy.map { language in
+            // Locales that appear only on non-translatable entries are out of scope
+            // for translation coverage; report them as not-applicable with zero totals.
+            guard translatableLanguages.contains(language) else {
+                return (language, LanguageStats(
+                    translated: 0,
+                    untranslated: 0,
+                    total: 0,
+                    coverage: .notApplicable
+                ))
+            }
+
             let translated = translatableEntries.lazy.filter { $0.countsAsTranslated(for: language) }.count
             let total = translatableEntries.count
             let untranslated = total - translated

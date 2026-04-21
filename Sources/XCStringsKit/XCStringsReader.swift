@@ -21,6 +21,17 @@ struct XCStringsReader: Sendable {
             .sorted()
     }
 
+    /// Get languages that are in scope for translatable entries.
+    /// Excludes locales that appear only on `shouldTranslate: false` keys so they
+    /// don't pollute coverage math against translatable keys.
+    func listTranslatableLanguages() -> [String] {
+        file.strings.values.lazy
+            .filter(\.requiresTranslation)
+            .compactMap(\.localizations?.keys)
+            .reduce(into: Set([file.sourceLanguage])) { $0.formUnion($1) }
+            .sorted()
+    }
+
     /// Get untranslated keys for a specific language
     func listUntranslated(for language: String) -> [String] {
         file.strings
@@ -80,6 +91,11 @@ struct XCStringsReader: Sendable {
         }
 
         if let lang = language {
+            // Non-translatable keys are valid in any language by definition; they
+            // don't require a per-language localization record.
+            if !entry.requiresTranslation {
+                return true
+            }
             return entry.localizations?[lang] != nil
         }
 
@@ -94,7 +110,7 @@ struct XCStringsReader: Sendable {
 
     /// Check coverage for a key
     func checkCoverage(_ key: String) throws -> CoverageInfo {
-        let allLanguages = listLanguages()
+        let allLanguages = listTranslatableLanguages()
 
         guard let entry = file.strings[key] else {
             throw XCStringsError.keyNotFound(key: key)
