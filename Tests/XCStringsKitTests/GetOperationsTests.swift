@@ -105,15 +105,17 @@ struct GetOperationsTests {
         #expect(keyInfo.translations.isEmpty)
     }
 
-    @Test("getKey throws when requested language is absent for translatable key")
-    func getKeyMissingLanguageThrowsForTranslatableKey() async throws {
+    @Test("getKey returns metadata when requested language is absent for translatable key")
+    func getKeyMissingLanguageReturnsMetadataForTranslatableKey() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
         defer { TestHelper.removeTempFile(at: path) }
 
         let parser = XCStringsParser(path: path)
+        let keyInfo = try await parser.getKey("Hello", language: "fr")
 
-        await #expect(throws: XCStringsError.self) {
-            _ = try await parser.getKey("Hello", language: "fr")
-        }
+        #expect(keyInfo.key == "Hello")
+        #expect(keyInfo.comment == "Greeting")
+        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.translations.isEmpty)
     }
 }

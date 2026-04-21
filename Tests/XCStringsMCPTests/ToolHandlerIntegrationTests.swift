@@ -170,8 +170,8 @@ struct ToolHandlerIntegrationTests {
         #expect(keyInfo.translations.isEmpty)
     }
 
-    @Test("GetKeyHandler throws when requested language is absent for translatable key")
-    func getKeyHandlerMissingLanguageThrowsForTranslatableKey() async throws {
+    @Test("GetKeyHandler returns metadata when requested language is absent for translatable key")
+    func getKeyHandlerMissingLanguageForTranslatableKey() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
         defer { TestHelper.removeTempFile(at: path) }
 
@@ -182,9 +182,13 @@ struct ToolHandlerIntegrationTests {
             "language": .string("fr")
         ]))
 
-        await #expect(throws: XCStringsError.self) {
-            _ = try await handler.execute(with: context)
-        }
+        let result = try await handler.execute(with: context)
+        let keyInfo: KeyInfo = try decodeJSON(result, as: KeyInfo.self)
+
+        #expect(keyInfo.key == "Hello")
+        #expect(keyInfo.comment == "Greeting")
+        #expect(keyInfo.languages.isEmpty)
+        #expect(keyInfo.translations.isEmpty)
     }
 
     @Test("CheckKeyHandler returns true for existing key")
@@ -211,6 +215,22 @@ struct ToolHandlerIntegrationTests {
         let context = ToolContext(arguments: ToolArguments(raw: [
             "file": .string(path),
             "key": .string("NonExistent")
+        ]))
+
+        let result = try await handler.execute(with: context)
+        #expect(result == "false")
+    }
+
+    @Test("CheckKeyHandler uses actual localizations for non-translatable keys")
+    func checkKeyHandlerNonTranslatableWithLanguage() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = CheckKeyHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("BrandName"),
+            "language": .string("ja")
         ]))
 
         let result = try await handler.execute(with: context)

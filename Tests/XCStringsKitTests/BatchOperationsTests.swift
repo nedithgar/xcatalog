@@ -42,6 +42,13 @@ struct BatchOperationsTests {
                 expectedExisting: [],
                 expectedMissing: []
             ),
+            CheckKeysTestCase(
+                fixture: .withLocaleOnlyOnNonTranslatableKey,
+                keys: ["BrandName", "Hello"],
+                language: "ja",
+                expectedExisting: ["BrandName"],
+                expectedMissing: ["Hello"]
+            ),
         ]
     }
 

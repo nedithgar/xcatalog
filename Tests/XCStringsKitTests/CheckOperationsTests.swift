@@ -48,8 +48,8 @@ struct CheckOperationsTests {
         #expect(exists == expected)
     }
 
-    @Test("checkKey with language recognizes non-translatable keys")
-    func checkKeyWithLanguageNonTranslatable() async throws {
+    @Test("checkKey with language requires an actual localization for non-translatable keys")
+    func checkKeyWithLanguageNonTranslatableWithoutLocalization() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
         defer { TestHelper.removeTempFile(at: path) }
 
@@ -57,9 +57,22 @@ struct CheckOperationsTests {
         let exists = try await parser.checkKey("BrandName", language: "ja")
         let keyInfo = try await parser.getKey("BrandName", language: "ja")
 
-        #expect(exists == true)
+        #expect(exists == false)
         #expect(keyInfo.shouldTranslate == false)
         #expect(keyInfo.translations.isEmpty)
+    }
+
+    @Test("checkKey with language succeeds for non-translatable keys that have a localization record")
+    func checkKeyWithLanguageNonTranslatableWithLocalization() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let exists = try await parser.checkKey("BrandName", language: "ja")
+        let missing = try await parser.checkKey("BrandName", language: "fr")
+
+        #expect(exists == true)
+        #expect(missing == false)
     }
 
     @Test("checkCoverage returns correct coverage", arguments: [

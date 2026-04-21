@@ -117,14 +117,16 @@ struct XCStringsReaderTests {
         #expect(info.translations.isEmpty)
     }
 
-    @Test("getKey throws when filtered language is missing for translatable key")
-    func getKeyMissingFilteredLanguageThrowsForTranslatableKey() throws {
+    @Test("getKey keeps metadata when filtered language is missing for translatable key")
+    func getKeyMissingFilteredLanguageForTranslatableKey() throws {
         let file = try loadFixture(TestFixtures.withNonTranslatableKey)
         let reader = XCStringsReader(file: file)
 
-        #expect(throws: XCStringsError.self) {
-            _ = try reader.getKey("Hello", language: "fr")
-        }
+        let info = try reader.getKey("Hello", language: "fr")
+
+        #expect(info.comment == "Greeting")
+        #expect(info.languages.isEmpty)
+        #expect(info.translations.isEmpty)
     }
 
     @Test("getKey throws for non-existent key")
@@ -191,6 +193,15 @@ struct XCStringsReaderTests {
 
         #expect(reader.checkKey("Hello", language: "ja") == true)
         #expect(reader.checkKey("Hello", language: "fr") == false)
+    }
+
+    @Test("checkKey with language uses actual localizations for non-translatable keys")
+    func checkKeyWithLanguageNonTranslatable() throws {
+        let file = try loadFixture(TestFixtures.withLocaleOnlyOnNonTranslatableKey)
+        let reader = XCStringsReader(file: file)
+
+        #expect(reader.checkKey("BrandName", language: "ja") == true)
+        #expect(reader.checkKey("BrandName", language: "fr") == false)
     }
 
     // MARK: - checkCoverage

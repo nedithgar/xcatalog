@@ -44,6 +44,8 @@ Tests use fixture-based approach. See `TestFixtures.swift` and `Tests/XCStringsM
 ## Behavior Notes
 
 - `get key` returns `KeyInfo` metadata together with `translations`, not just translation values.
+- `get key --lang <locale>` is lenient: if the key exists but that locale is missing, it still returns `KeyInfo` with an empty `translations` payload.
+- `check key --lang <locale>` is strict: it returns `true` only when that locale has an actual localization record, even for keys with `shouldTranslate: false`.
 - Keys with `shouldTranslate: false` are excluded from untranslated lists and coverage/progress totals.
 - Coverage and progress outputs use `CoverageMeasurement` with `state` (`measured` or `notApplicable`) and optional `percent`.
 - Compact coverage summaries expose `completionState`, `incompleteLanguages`, and `notApplicableLanguages`.

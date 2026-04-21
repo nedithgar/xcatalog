@@ -61,7 +61,7 @@ struct XCStringsReader: Sendable {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        let translations = try keyInfoTranslations(for: key, entry: entry, language: language)
+        let translations = keyInfoTranslations(for: key, entry: entry, language: language)
         let languages = translations.keys.sorted()
 
         return KeyInfo(
@@ -91,11 +91,6 @@ struct XCStringsReader: Sendable {
         }
 
         if let lang = language {
-            // Non-translatable keys are valid in any language by definition; they
-            // don't require a per-language localization record.
-            if !entry.requiresTranslation {
-                return true
-            }
             return entry.localizations?[lang] != nil
         }
 
@@ -151,12 +146,8 @@ struct XCStringsReader: Sendable {
         return filteredTranslations(for: key, entry: entry, language: nil)
     }
 
-    private func keyInfoTranslations(for key: String, entry: StringEntry, language: String?) throws -> [String: TranslationInfo] {
-        guard entry.requiresTranslation else {
-            return filteredTranslations(for: key, entry: entry, language: language)
-        }
-
-        return try strictTranslations(for: key, entry: entry, language: language)
+    private func keyInfoTranslations(for key: String, entry: StringEntry, language: String?) -> [String: TranslationInfo] {
+        filteredTranslations(for: key, entry: entry, language: language)
     }
 
     private func filteredTranslations(for key: String, entry: StringEntry, language: String?) -> [String: TranslationInfo] {
