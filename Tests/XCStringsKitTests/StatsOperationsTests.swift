@@ -124,4 +124,33 @@ struct StatsOperationsTests {
         #expect(compactStats.completionState == .notApplicable)
         #expect(compactStats.notApplicableLanguages == ["en"])
     }
+
+    @Test("getStats derives coverage correctly from real-world sample")
+    func getStatsRealWorldSample() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.realWorldSample)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let stats = try await parser.getStats()
+        let enStats = try #require(stats.coverageByLanguage["en"])
+        let frStats = try #require(stats.coverageByLanguage["fr"])
+        let jaStats = try #require(stats.coverageByLanguage["ja"])
+
+        #expect(stats.languages == ["en", "fr", "ja"])
+
+        #expect(enStats.translated == 1)
+        #expect(enStats.untranslated == 1)
+        #expect(enStats.total == 2)
+        #expect(enStats.coverage.percent == 50.0)
+
+        #expect(frStats.translated == 1)
+        #expect(frStats.untranslated == 1)
+        #expect(frStats.total == 2)
+        #expect(frStats.coverage.percent == 50.0)
+
+        #expect(jaStats.translated == 2)
+        #expect(jaStats.untranslated == 0)
+        #expect(jaStats.total == 2)
+        #expect(jaStats.coverage.percent == 100.0)
+    }
 }

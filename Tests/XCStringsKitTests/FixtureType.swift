@@ -20,6 +20,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
     case deviceVariations
     case withStaleKeys
     case withLocaleOnlyOnNonTranslatableKey
+    case realWorldSample
 
     var testDescription: String { rawValue }
 
@@ -40,6 +41,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
         case .deviceVariations: TestFixtures.deviceVariations
         case .withStaleKeys: TestFixtures.withStaleKeys
         case .withLocaleOnlyOnNonTranslatableKey: TestFixtures.withLocaleOnlyOnNonTranslatableKey
+        case .realWorldSample: TestFixtures.realWorldSample
         }
     }
 
@@ -60,6 +62,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
         case .deviceVariations: 1
         case .withStaleKeys: 4
         case .withLocaleOnlyOnNonTranslatableKey: 2
+        case .realWorldSample: 4
         }
     }
 
