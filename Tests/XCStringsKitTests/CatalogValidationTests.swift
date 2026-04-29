@@ -452,6 +452,24 @@ struct CatalogValidationTests {
         #expect(report.issues.contains { $0.code == "substitution_not_referenced" })
     }
 
+    @Test("validateCatalog reports omitted rich substitution declarations")
+    func validateCatalogReportsOmittedRichSubstitutionDeclarations() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithOmittedSubstitutionDeclaration)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = await parser.validateCatalog()
+        let issue = try #require(report.issues.first { $0.code == "referenced_substitution_missing" })
+
+        #expect(!report.success)
+        #expect(report.richRecordReport?.success == false)
+        #expect(report.richRecordReport?.richLocalizationCount == 1)
+        #expect(issue.key == "items.count")
+        #expect(issue.language == "en")
+        #expect(issue.path == "strings[\"items.count\"].localizations.en.substitutions")
+        #expect(!report.issues.contains { $0.code == "substitution_not_referenced" })
+    }
+
     @Test("compact validation report keeps summary and short issue list")
     func compactValidationReportKeepsSummaryAndShortIssueList() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSubstitutionDeclaration)
@@ -1558,6 +1576,25 @@ struct CatalogValidationTests {
                   "argNum": 1,
                   "formatSpecifier": "lld"
                 }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithOmittedSubstitutionDeclaration = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.count": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
               }
             }
           }

@@ -1032,23 +1032,23 @@ package enum XCStringsCatalogValidator {
                     continue
                 }
 
-                if let substitutions = localization.substitutions {
-                    let referencedNames = Set(FormatStringSafety.placeholders(in: localization.stringUnit?.value ?? "")
-                        .filter { $0.kind == .stringsdictSubstitution }
-                        .compactMap(\.name))
-                    let declaredNames = Set(substitutions.keys)
+                let referencedNames = Set(FormatStringSafety.placeholders(in: localization.stringUnit?.value ?? "")
+                    .filter { $0.kind == .stringsdictSubstitution }
+                    .compactMap(\.name))
+                let declaredNames = Set(localization.substitutions?.keys ?? [])
 
-                    for missingName in referencedNames.subtracting(declaredNames).sorted() {
-                        issues.append(CatalogValidationIssue(
-                            code: "referenced_substitution_missing",
-                            severity: .error,
-                            message: "String unit references substitution '\(missingName)' but the localization does not declare it.",
-                            key: key,
-                            language: language,
-                            path: "strings[\(quotedKey(key))].localizations.\(language).substitutions"
-                        ))
-                    }
+                for missingName in referencedNames.subtracting(declaredNames).sorted() {
+                    issues.append(CatalogValidationIssue(
+                        code: "referenced_substitution_missing",
+                        severity: .error,
+                        message: "String unit references substitution '\(missingName)' but the localization does not declare it.",
+                        key: key,
+                        language: language,
+                        path: "strings[\(quotedKey(key))].localizations.\(language).substitutions"
+                    ))
+                }
 
+                if localization.substitutions != nil {
                     for unusedName in declaredNames.subtracting(referencedNames).sorted() {
                         issues.append(CatalogValidationIssue(
                             code: "substitution_not_referenced",
@@ -1086,8 +1086,13 @@ package enum XCStringsCatalogValidator {
             }
 
             for language in localizations.keys.sorted() {
-                guard let localization = localizations[language],
-                      localization.hasRichContent else {
+                guard let localization = localizations[language] else {
+                    continue
+                }
+                let referencesSubstitution = (localization.stringUnit?.value).map { value in
+                    FormatStringSafety.placeholders(in: value).contains { $0.kind == .stringsdictSubstitution }
+                } ?? false
+                guard localization.hasRichContent || referencesSubstitution else {
                     continue
                 }
 
