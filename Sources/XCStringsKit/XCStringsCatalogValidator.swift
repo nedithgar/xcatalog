@@ -595,6 +595,9 @@ package enum XCStringsCatalogValidator {
         let sourceHasNonPositionalPrintf = sourcePrintf.contains { $0.explicitPosition == nil }
         let targetHasPositionalPrintf = targetPrintf.contains { $0.explicitPosition != nil }
         let targetHasNonPositionalPrintf = targetPrintf.contains { $0.explicitPosition == nil }
+        let richOnly = sourcePrintf.isEmpty && targetPrintf.isEmpty
+        let hasExplicitRichPositions = sourceArguments.contains { $0.explicitPosition != nil }
+            || targetArguments.contains { $0.explicitPosition != nil }
 
         if sourceHasPositionalPrintf && sourceHasNonPositionalPrintf {
             return [mixedRichPositionalDiagnostic(label: "Source", arguments: sourcePrintf)]
@@ -608,6 +611,13 @@ package enum XCStringsCatalogValidator {
             return [
                 "Target must preserve positional placeholders from the source rich string: expected \(describeRuntime(sourceArguments)), found \(describeRuntime(targetArguments))."
             ]
+        }
+
+        if richOnly && hasExplicitRichPositions {
+            return compareRichPositions(
+                source: assignEffectivePositions(sourceArguments),
+                target: assignEffectivePositions(targetArguments)
+            )
         }
 
         if !sourceHasPositionalPrintf && !targetHasPositionalPrintf {

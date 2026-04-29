@@ -297,6 +297,20 @@ struct CatalogValidationTests {
         #expect(report.issues.isEmpty)
     }
 
+    @Test("validatePlaceholders respects argNum for rich-only substitution reorders")
+    func validatePlaceholdersRespectsArgNumForRichOnlySubstitutionReorders() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRichOnlySubstitutionReorder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 5)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
     @Test("validatePlaceholders rejects positional printf indexes that collide with rich substitutions")
     func validatePlaceholdersRejectsRichImplicitSourceToCollidingPositionalTargetPrintfReorder() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithRichImplicitSourceToCollidingPositionalTargetPrintfReorder)
@@ -1126,6 +1140,115 @@ struct CatalogValidationTests {
                         "stringUnit": {
                           "state": "translated",
                           "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithRichOnlySubstitutionReorder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "fruit.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@apples@ %#@oranges@"
+              },
+              "substitutions": {
+                "apples": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg apple"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg apples"
+                        }
+                      }
+                    }
+                  }
+                },
+                "oranges": {
+                  "argNum": 2,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg orange"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg oranges"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@oranges@ %#@apples@"
+              },
+              "substitutions": {
+                "apples": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg manzana"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg manzanas"
+                        }
+                      }
+                    }
+                  }
+                },
+                "oranges": {
+                  "argNum": 2,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg naranja"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg naranjas"
                         }
                       }
                     }
