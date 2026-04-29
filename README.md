@@ -4,13 +4,13 @@ CLI tool and MCP server for CRUD operations on xcstrings (String Catalog) files.
 
 ## Motivation
 
-Large xcstrings files can contain thousands of localization keys across multiple languages, resulting in massive JSON files. When AI assistants (like Claude Code) read these files directly, they consume a significant amount of tokens—potentially exceeding context limits or rapidly depleting token budgets.
+Large xcstrings files can contain thousands of localization keys across multiple languages, resulting in massive JSON files. When AI assistants or other tools read these files directly, they consume a significant amount of tokens, potentially exceeding context limits or rapidly depleting token budgets.
 
 This tool provides a **token-efficient** approach by offering targeted CRUD operations:
 
-- **Query only what you need**: Fetch specific keys or languages instead of loading the entire file
-- **Incremental updates**: Add or update individual translations without reading the full content
-- **Quick stats**: Get coverage and progress summaries without parsing all entries
+- **Query only what you need**: Fetch specific keys or languages instead of returning the entire catalog JSON
+- **Incremental updates**: Add or update individual translations without sending the full file through an assistant context
+- **Quick stats**: Get coverage and progress summaries without returning every entry
 
 By using the MCP server or CLI, AI assistants can work with xcstrings files of any size while keeping token usage minimal.
 
@@ -67,7 +67,7 @@ Add to your Claude Code MCP settings:
 | `xcatalog_health` | Report running version and schema metadata, with local path diagnostics gated behind explicit opt-in |
 | `xcatalog_create_file` | Create a new xcstrings file |
 | `xcatalog_list_keys` | List all keys |
-| `xcatalog_list_languages` | List supported languages |
+| `xcatalog_list_languages` | List languages present in the file |
 | `xcatalog_list_untranslated` | List untranslated keys |
 | `xcatalog_list_stale` | List keys with stale extraction state |
 | `xcatalog_preflight_locale` | Classify target-locale work before writing translations |
@@ -119,7 +119,7 @@ The launcher rebuilds the debug product, exports build metadata, and then starts
 /absolute/path/to/xcatalog/.build/debug/xcatalog mcp
 ```
 
-Use `xcatalog_health` at the start of a local development session to verify which server process is running. By default, the response omits local filesystem paths and returns public metadata such as version, server name, tool schema version, git commit, build configuration, and build date. To include `binaryPath`, `currentWorkingDirectory`, and parsed `XCATALOG_ALLOWED_ROOTS`, set `XCATALOG_HEALTH_INCLUDE_SENSITIVE=true` on the server and call `xcatalog_health` with `includeSensitivePaths: true`.
+Use `xcatalog_health` at the start of a local development session to verify which server process is running. By default, the response omits local filesystem paths and returns public metadata such as version, server name, tool schema version, git commit, build configuration, and build date. To include `binaryPath`, `currentWorkingDirectory`, and parsed `XCATALOG_ALLOWED_ROOTS`, set `XCATALOG_HEALTH_INCLUDE_SENSITIVE=true` on the server and call `xcatalog_health` with `includeSensitivePaths: true`. `XCATALOG_ALLOWED_ROOTS` is diagnostic health metadata only; read and write tools operate on the explicit file paths passed in each request.
 
 MCP hosts generally do not hot-reload tool configuration or tool schemas. If you change MCP server registration, tool names, argument schemas, or the configured command path, restart or reload the MCP host. If you only change implementation behind the same command path, rebuild and restart the MCP server process through the host.
 
@@ -127,8 +127,8 @@ MCP hosts generally do not hot-reload tool configuration or tool schemas. If you
 
 Use a real app repository as an integration target without mixing tool changes and product localization changes:
 
-1. Keep `xcatalog` changes on a branch in your local `xcatalog` checkout.
-2. Configure the MCP client to use `scripts/dev-mcp.sh` and set `XCATALOG_ALLOWED_ROOTS` to the app repository you are testing against.
+1. Keep tool changes on a branch in your local `xcatalog` checkout.
+2. Configure the MCP client to use `scripts/dev-mcp.sh` and optionally set `XCATALOG_ALLOWED_ROOTS` to the app repository you are testing against so `xcatalog_health` can report it.
 3. Start a session by calling `xcatalog_health`.
 4. Run read-only checks against app catalogs before writing:
 
@@ -312,28 +312,35 @@ xcatalog batch supplement --file path/to/Localizable.xcstrings --lang ja \
 xcatalog batch supplement --file path/to/Localizable.xcstrings --lang ja --allow-partial --validate-compile \
   -e "Hello=こんにちは" \
   -e "Goodbye=さようなら"
+
+# Update existing target localizations during supplement
+xcatalog batch supplement --file path/to/Localizable.xcstrings --lang ja --overwrite \
+  -e "Hello=こんにちは" \
+  -e "Goodbye=さようなら"
 ```
 
 ### Common Options
 
-- `--file <path>`: xcstrings file path (required)
-- `--pretty`: Pretty-printed JSON output
-- `--compact`: Summary JSON for large preflight, supplement, and catalog validation outputs
+- `--file <path>`: xcstrings file path for single-file operations. Batch file-list commands use `-f, --files`.
+- `--pretty`: Pretty-printed JSON output where supported.
+- `--compact`: Summary JSON where supported. CLI compact mode is available for `list preflight`, `stats coverage`, `stats batch-coverage`, `batch supplement`, and `validate catalog`.
 
 ## Output Notes
 
 - `get key` and `xcatalog_get_key` return `KeyInfo` metadata together with translations. The JSON includes `comment`, `isCommentAutoGenerated`, `shouldTranslate`, `extractionState`, `languages`, and `translations`.
 - Passing `--lang` or `language` filters the `translations` payload to that locale while keeping the key metadata in the response. If the key exists but that locale is missing, the command still returns `KeyInfo` with an empty `translations` payload.
 - `check key` and `xcatalog_check_key` become locale-strict when a language is provided: they return `true` only when that locale has an actual localization record, even for keys marked `shouldTranslate: false`.
+- `list languages` and `xcatalog_list_languages` return the source language plus locales present anywhere in the catalog. Coverage and progress calculations use only languages in scope for translatable entries.
 - Coverage and progress commands now return a `coverage` object with `state` (`measured` or `notApplicable`) and `percent` instead of a top-level `coveragePercent` field. Measured percentages are serialized rounded to two decimal places, and incomplete coverage is never rounded up to `100.0`.
 - Keys marked with `shouldTranslate: false` are excluded from untranslated lists and coverage totals. If a key, language, or file has no translatable content, coverage is reported as `notApplicable`.
-- Add and update commands reject localization writes to keys marked `shouldTranslate: false` so coverage and write behavior stay consistent.
+- Add, update, and supplement writes reject or classify as unsafe any localization write to keys marked `shouldTranslate: false` so coverage and write behavior stay consistent.
 - Compact coverage outputs use `completionState` and may include `incompleteLanguages` and `notApplicableLanguages`.
-- Compact preflight, supplement, and catalog validation outputs keep the full report available by default, but return decision-oriented summaries when `--compact` or MCP `compact: true` is set. Use compact mode for agent planning and routine verification; use full mode when you need source values, comments, per-key diagnostics, or nested validation details.
+- CLI compact preflight, supplement, stats, and catalog validation outputs keep the full report available by default, but return decision-oriented summaries when `--compact` is set. MCP `xcatalog_preflight_locale`, `xcatalog_supplement_locale`, and `xcatalog_validate_catalog` also default to full output unless `compact: true` is passed. MCP `xcatalog_stats_coverage` and `xcatalog_batch_stats_coverage` default to compact output; pass `compact: false` for full coverage payloads.
+- `batch supplement` inserts missing target localizations by default. Existing target localizations are reported as `unchanged` when the value already matches or `skip` when the value differs; pass `--overwrite` or MCP `overwrite: true` to update differing existing target values.
 - `batch supplement --dry-run --validate-compile` applies the accepted plan to an in-memory projected catalog and runs `xcstringstool compile --dry-run` against a temporary copy without mutating the real file. If the atomic plan has blocking diagnostics and `--allow-partial` is not set, compile validation is skipped with `notRunDueToBlockingDiagnostics`. Results include `wouldWrite` and `compileValidationRanOnProjectedCatalog` so MCP clients can distinguish a plan-only dry run from a projected compile dry run.
 - Validation commands return structured reports. `validate catalog` checks JSON parseability, model decoding, placeholder consistency, rich substitution/variation preservation after an encode/decode round trip, suspicious key hygiene, and optional `xcstringstool compile --dry-run`.
 - Suspicious key detection flags empty keys, punctuation-only keys, and format-only keys such as `""`, `/`, and `(%@)` so callers can fix the SwiftUI call sites before committing catalog changes.
-- MCP write tools return structured JSON instead of plain success text. Single-key, multi-language, rename, delete, batch add, and batch update responses include `file`, `operationType`, `key`, `languages`, `fileChanged`, action counts such as `insertedCount` and `updatedCount`, per-entry `previousState` and `finalState` where applicable, `placeholderValidations`, and `validationWarnings`.
+- MCP add, update, rename, delete, batch add, and batch update tools return structured JSON instead of plain success text. Responses include `file`, `operationType`, `key`, `languages`, `fileChanged`, action counts such as `insertedCount` and `updatedCount`, per-entry `previousState` and `finalState` where applicable, `placeholderValidations`, and `validationWarnings`.
 - Write operations are serialized per canonical catalog path across parser instances, so parallel MCP calls cannot race through independent load-modify-save cycles for the same `.xcstrings` file. Prefer batch writes or `batch supplement` for multi-key work anyway: one planned write produces clearer diagnostics, fewer file rewrites, and less response noise than many parallel single-key calls.
 
 Example MCP write response:
