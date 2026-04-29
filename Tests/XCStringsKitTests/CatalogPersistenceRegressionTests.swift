@@ -121,6 +121,27 @@ struct CatalogPersistenceRegressionTests {
         #expect(updatedContent.hasSuffix("\n"))
     }
 
+    @Test("Rename preserves catalog key position and trailing newline")
+    func renamePreservesOriginalIndexAndTrailingNewline() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let oldKey = "sample.export.saveCopyDetail"
+        let newKey = "sample.export.saveCopyDescription"
+        let expectedKeyOrder = rootStringKeys(in: TestFixtures.catalogPersistenceRegression)
+            .map { $0 == oldKey ? newKey : $0 }
+
+        try await parser.renameKey(from: oldKey, to: newKey)
+
+        let updatedContent = try String(contentsOfFile: path, encoding: .utf8)
+        #expect(rootStringKeys(in: updatedContent) == expectedKeyOrder)
+        #expect(updatedContent.hasSuffix("\n"))
+
+        let reloadedFile = try await parser.load()
+        #expect(reloadedFile.strings.keys == expectedKeyOrder)
+    }
+
     @Test("New catalog keys append after existing keys")
     func newKeysAppendAfterExistingKeys() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)

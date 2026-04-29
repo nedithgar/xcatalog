@@ -126,7 +126,7 @@ enum XCStringsWriter {
     ) throws -> XCStringsFile {
         var result = file
 
-        guard let entry = result.strings[oldKey] else {
+        guard result.strings[oldKey] != nil else {
             throw XCStringsError.keyNotFound(key: oldKey)
         }
 
@@ -134,8 +134,7 @@ enum XCStringsWriter {
             throw XCStringsError.keyAlreadyExists(key: newKey)
         }
 
-        result.strings[newKey] = entry
-        result.strings.removeValue(forKey: oldKey)
+        result.strings.renameKey(from: oldKey, to: newKey)
 
         return result
     }

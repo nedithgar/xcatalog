@@ -85,6 +85,17 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
         return elements.remove(at: index).value
     }
 
+    @discardableResult
+    package mutating func renameKey(from oldKey: String, to newKey: String) -> Bool {
+        guard let index = elements.firstIndex(where: { $0.key == oldKey }),
+              !elements.contains(where: { $0.key == newKey }) else {
+            return false
+        }
+
+        elements[index].key = newKey
+        return true
+    }
+
     package mutating func reorder(existingKeys preferredKeys: [String]) {
         var reordered: [Element] = []
         var consumed = Set<String>()
