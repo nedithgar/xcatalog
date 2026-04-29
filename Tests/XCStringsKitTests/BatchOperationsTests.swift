@@ -192,6 +192,31 @@ struct BatchOperationsTests {
         #expect(Set(result.entryResults.filter { $0.status == .failed }.map(\.key)) == Set(testCase.expectedFailedKeys))
     }
 
+    @Test("batch add compact result summarizes writes and failures")
+    func addTranslationsBatchCompactResultSummarizesWritesAndFailures() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.singleKeySingleLang.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "NewKey", translations: ["en": "New Value"]),
+            BatchTranslationEntry(key: "Hello", translations: ["en": "Duplicate"]),
+        ]
+
+        let compact = try await parser.addTranslationsBatch(entries: entries).compact
+
+        #expect(!compact.success)
+        #expect(compact.counts.inputEntries == 2)
+        #expect(compact.counts.succeededEntries == 1)
+        #expect(compact.counts.failedEntries == 1)
+        #expect(compact.counts.languageWrites == 1)
+        #expect(compact.counts.insertedTranslations == 1)
+        #expect(compact.counts.updatedTranslations == 0)
+        #expect(compact.writtenEntries.map(\.key) == ["NewKey"])
+        #expect(compact.writtenEntries.first?.insertedLanguages == ["en"])
+        #expect(compact.failedEntries.map(\.key) == ["Hello"])
+    }
+
     @Test("addTranslationsBatch preserves duplicate mixed outcome input indexes")
     func addTranslationsBatchDuplicateMixedOutcomesPreserveInputIndexes() async throws {
         let path = try TestHelper.createTempFile(content: FixtureType.empty.content)
@@ -303,6 +328,31 @@ struct BatchOperationsTests {
         #expect(result.failedCount == 1)
         #expect(result.entryResults.contains { $0.key == "Hello" && $0.status == .succeeded })
         #expect(result.entryResults.contains { $0.key == "NonExistent" && $0.status == .failed })
+    }
+
+    @Test("batch update compact result summarizes writes and failures")
+    func updateTranslationsBatchCompactResultSummarizesWritesAndFailures() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.singleKeySingleLang.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "Hello", translations: ["en": "Updated"]),
+            BatchTranslationEntry(key: "NonExistent", translations: ["en": "Value"]),
+        ]
+
+        let compact = try await parser.updateTranslationsBatch(entries: entries).compact
+
+        #expect(!compact.success)
+        #expect(compact.counts.inputEntries == 2)
+        #expect(compact.counts.succeededEntries == 1)
+        #expect(compact.counts.failedEntries == 1)
+        #expect(compact.counts.languageWrites == 1)
+        #expect(compact.counts.insertedTranslations == 0)
+        #expect(compact.counts.updatedTranslations == 1)
+        #expect(compact.writtenEntries.map(\.key) == ["Hello"])
+        #expect(compact.writtenEntries.first?.updatedLanguages == ["en"])
+        #expect(compact.failedEntries.map(\.key) == ["NonExistent"])
     }
 
     @Test("updateTranslationsBatch preserves duplicate failed input indexes")

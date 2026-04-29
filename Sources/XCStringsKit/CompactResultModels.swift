@@ -132,6 +132,85 @@ package extension LocaleSupplementResult {
     }
 }
 
+// MARK: - Batch Write Compact Models
+
+package struct BatchWriteCompactResult: Codable, Sendable {
+    package let success: Bool
+    package let counts: BatchWriteCompactCounts
+    package let placeholderValidation: CompactPlaceholderValidationSummary
+    package let writtenEntries: [BatchWriteCompactWrittenEntry]
+    package let failedEntries: [BatchWriteCompactFailedEntry]
+
+    package init(result: BatchWriteResult) {
+        self.success = result.success
+        self.counts = BatchWriteCompactCounts(result: result)
+        self.placeholderValidation = CompactPlaceholderValidationSummary(validations: result.placeholderValidations)
+        self.writtenEntries = result.entryResults
+            .filter { $0.status == .succeeded }
+            .map(BatchWriteCompactWrittenEntry.init(entry:))
+        self.failedEntries = result.entryResults
+            .filter { $0.status == .failed }
+            .map(BatchWriteCompactFailedEntry.init(entry:))
+    }
+}
+
+package struct BatchWriteCompactCounts: Codable, Sendable {
+    package let inputEntries: Int
+    package let succeededEntries: Int
+    package let failedEntries: Int
+    package let languageWrites: Int
+    package let insertedTranslations: Int
+    package let updatedTranslations: Int
+
+    package init(result: BatchWriteResult) {
+        self.inputEntries = result.entryResults.count
+        self.succeededEntries = result.successCount
+        self.failedEntries = result.failedCount
+        let languageResults = result.entryResults.flatMap(\.languageResults)
+        self.languageWrites = languageResults.count
+        self.insertedTranslations = languageResults.filter { $0.action == .inserted }.count
+        self.updatedTranslations = languageResults.filter { $0.action == .updated }.count
+    }
+}
+
+package struct BatchWriteCompactWrittenEntry: Codable, Sendable {
+    package let inputIndex: Int
+    package let key: String
+    package let insertedLanguages: [String]
+    package let updatedLanguages: [String]
+
+    package init(entry: BatchWriteEntryResult) {
+        self.inputIndex = entry.inputIndex
+        self.key = entry.key
+        self.insertedLanguages = entry.languageResults
+            .filter { $0.action == .inserted }
+            .map(\.language)
+            .sorted()
+        self.updatedLanguages = entry.languageResults
+            .filter { $0.action == .updated }
+            .map(\.language)
+            .sorted()
+    }
+}
+
+package struct BatchWriteCompactFailedEntry: Codable, Sendable {
+    package let inputIndex: Int
+    package let key: String
+    package let error: String?
+
+    package init(entry: BatchWriteEntryResult) {
+        self.inputIndex = entry.inputIndex
+        self.key = entry.key
+        self.error = entry.error
+    }
+}
+
+package extension BatchWriteResult {
+    var compact: BatchWriteCompactResult {
+        BatchWriteCompactResult(result: self)
+    }
+}
+
 // MARK: - Catalog Validation Compact Models
 
 package struct CatalogValidationCompactReport: Codable, Sendable {

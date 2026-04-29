@@ -315,8 +315,7 @@ package enum XCStringsCatalogValidator {
 
         for key in file.strings.keys.sorted() {
             guard let entry = file.strings[key],
-                  entry.requiresTranslation,
-                  let sourceLocalization = entry.localizations?[file.sourceLanguage] else {
+                  entry.requiresTranslation else {
                 continue
             }
 
@@ -326,12 +325,22 @@ package enum XCStringsCatalogValidator {
                     continue
                 }
 
-                let result = validateLocalizationPlaceholders(
-                    key: key,
-                    language: language,
-                    sourceLocalization: sourceLocalization,
-                    targetLocalization: targetLocalization
-                )
+                let result: (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue])
+                if let sourceLocalization = entry.localizations?[file.sourceLanguage],
+                   sourceLocalization.isConcrete {
+                    result = validateLocalizationPlaceholders(
+                        key: key,
+                        language: language,
+                        sourceLocalization: sourceLocalization,
+                        targetLocalization: targetLocalization
+                    )
+                } else {
+                    result = validateKeySourceLocalizationPlaceholders(
+                        key: key,
+                        language: language,
+                        targetLocalization: targetLocalization
+                    )
+                }
                 validations.append(contentsOf: result.validations)
                 issues.append(contentsOf: result.issues)
             }
@@ -424,6 +433,53 @@ package enum XCStringsCatalogValidator {
         )
         validations.append(contentsOf: substitutionResult.validations)
         issues.append(contentsOf: substitutionResult.issues)
+
+        return (validations, issues)
+    }
+
+    private static func validateKeySourceLocalizationPlaceholders(
+        key: String,
+        language: String,
+        targetLocalization: Localization
+    ) -> (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue]) {
+        var validations: [PlaceholderValidationResult] = []
+        var issues: [CatalogValidationIssue] = []
+
+        if let targetValue = targetLocalization.stringUnit?.value {
+            let validation = validatePlaceholderSet(
+                key: key,
+                language: language,
+                sourceValue: key,
+                targetValue: targetValue
+            )
+            if validation.checked {
+                validations.append(validation)
+            }
+            issues.append(contentsOf: issuesForInvalidValidation(
+                validation,
+                path: "strings[\(quotedKey(key))].localizations.\(language).stringUnit.value"
+            ))
+        }
+
+        let targetVariationValues = variationValues(in: targetLocalization.variations)
+        for identity in targetVariationValues.keys.sorted() {
+            guard let targetValue = targetVariationValues[identity] else {
+                continue
+            }
+            let validation = validatePlaceholderSet(
+                key: key,
+                language: language,
+                sourceValue: key,
+                targetValue: targetValue
+            )
+            if validation.checked {
+                validations.append(validation)
+            }
+            issues.append(contentsOf: issuesForInvalidValidation(
+                validation,
+                path: "strings[\(quotedKey(key))].localizations.\(language).variations.\(identity)"
+            ))
+        }
 
         return (validations, issues)
     }
@@ -900,6 +956,12 @@ package enum XCStringsCatalogValidator {
 
     private static func quotedKey(_ key: String) -> String {
         key.isEmpty ? "\"\"" : "\"\(key)\""
+    }
+}
+
+private extension Localization {
+    var isConcrete: Bool {
+        stringUnit?.value != nil || variations != nil || substitutions != nil
     }
 }
 

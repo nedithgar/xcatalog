@@ -60,6 +60,9 @@ extension BatchCommand {
         @Flag(name: .long, help: "Output in pretty-printed JSON format")
         var pretty = false
 
+        @Flag(name: .long, help: "Output a compact batch-write summary instead of full per-entry state snapshots")
+        var compact = false
+
         func validate() throws {
             if entries.isEmpty {
                 throw ValidationError("At least one entry must be specified")
@@ -70,7 +73,11 @@ extension BatchCommand {
             let parser = XCStringsParser(path: file)
             let batchEntries = try entries.map { try BatchEntryParser.parse($0) }
             let result = try await parser.addTranslationsBatch(entries: batchEntries, allowOverwrite: overwrite)
-            try CLIOutput.printJSON(result, pretty: pretty)
+            if compact {
+                try CLIOutput.printJSON(result.compact, pretty: pretty)
+            } else {
+                try CLIOutput.printJSON(result, pretty: pretty)
+            }
         }
     }
 
@@ -89,7 +96,7 @@ extension BatchCommand {
         @Flag(name: .long, help: "Output in pretty-printed JSON format")
         var pretty = false
 
-        @Flag(name: .long, help: "Output a compact supplement summary instead of the full plan")
+        @Flag(name: .long, help: "Output a compact batch-write summary instead of full per-entry state snapshots")
         var compact = false
 
         func validate() throws {
@@ -102,7 +109,11 @@ extension BatchCommand {
             let parser = XCStringsParser(path: file)
             let batchEntries = try entries.map { try BatchEntryParser.parse($0) }
             let result = try await parser.updateTranslationsBatch(entries: batchEntries)
-            try CLIOutput.printJSON(result, pretty: pretty)
+            if compact {
+                try CLIOutput.printJSON(result.compact, pretty: pretty)
+            } else {
+                try CLIOutput.printJSON(result, pretty: pretty)
+            }
         }
     }
 

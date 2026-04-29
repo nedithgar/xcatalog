@@ -51,6 +51,128 @@ struct CatalogValidationTests {
         #expect(report.issues.first?.language == "es")
     }
 
+    @Test("validatePlaceholders uses key text when source localization is absent")
+    func validatePlaceholdersUsesKeyTextWhenSourceLocalizationIsAbsent() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSourceFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(report.issues.first?.key == "Items: %lld")
+        #expect(report.validations.first?.sourceValue == "Items: %lld")
+    }
+
+    @Test("validateCatalog uses key text when source localization is absent")
+    func validateCatalogUsesKeyTextWhenSourceLocalizationIsAbsent() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSourceFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = await parser.validateCatalog()
+        let placeholderReport = try #require(report.placeholderReport)
+
+        #expect(!report.success)
+        #expect(placeholderReport.summary.checkedTranslations == 1)
+        #expect(placeholderReport.summary.invalidTranslations == 1)
+        #expect(report.issues.contains { $0.code == "placeholder_mismatch" && $0.key == "Items: %lld" })
+    }
+
+    @Test("validatePlaceholders uses key text when source localization is an empty shell")
+    func validatePlaceholdersUsesKeyTextWhenSourceLocalizationIsEmptyShell() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithEmptySourceShellFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(report.issues.first?.key == "Items: %lld")
+        #expect(report.validations.first?.sourceValue == "Items: %lld")
+    }
+
+    @Test("validateCatalog uses key text when source localization is an empty shell")
+    func validateCatalogUsesKeyTextWhenSourceLocalizationIsEmptyShell() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithEmptySourceShellFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = await parser.validateCatalog()
+        let placeholderReport = try #require(report.placeholderReport)
+
+        #expect(!report.success)
+        #expect(placeholderReport.summary.checkedTranslations == 1)
+        #expect(placeholderReport.summary.invalidTranslations == 1)
+        #expect(report.issues.contains { $0.code == "placeholder_mismatch" && $0.key == "Items: %lld" })
+    }
+
+    @Test("validatePlaceholders uses key text for target-only variations")
+    func validatePlaceholdersUsesKeyTextForTargetOnlyVariations() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSourceTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 2)
+        #expect(report.summary.invalidTranslations == 2)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch", "placeholder_mismatch"])
+        #expect(report.issues.map(\.path).contains("strings[\"%lld items\"].localizations.es.variations.plural.one"))
+        #expect(report.issues.map(\.path).contains("strings[\"%lld items\"].localizations.es.variations.plural.other"))
+        #expect(report.validations.allSatisfy { $0.sourceValue == "%lld items" })
+    }
+
+    @Test("validateCatalog uses key text for target-only variations")
+    func validateCatalogUsesKeyTextForTargetOnlyVariations() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSourceTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = await parser.validateCatalog()
+        let placeholderReport = try #require(report.placeholderReport)
+
+        #expect(!report.success)
+        #expect(placeholderReport.summary.checkedTranslations == 2)
+        #expect(placeholderReport.summary.invalidTranslations == 2)
+        #expect(report.issues.count == 2)
+        #expect(report.issues.allSatisfy { $0.code == "placeholder_mismatch" && $0.key == "%lld items" })
+    }
+
+    @Test("validatePlaceholders accepts target-only variations that preserve key placeholders")
+    func validatePlaceholdersAcceptsTargetOnlyVariationsThatPreserveKeyPlaceholders() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithValidMissingSourceTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 2)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("validatePlaceholders prefers explicit source localization over key text")
+    func validatePlaceholdersPrefersExplicitSourceLocalizationOverKeyText() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithExplicitSourceValueDifferentFromKey)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 0)
+        #expect(report.summary.invalidTranslations == 0)
+    }
+
     @Test("validatePlaceholders checks substitution variation placeholders")
     func validatePlaceholdersChecksSubstitutionVariationValues() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithBrokenSubstitutionTranslation)
@@ -183,6 +305,132 @@ struct CatalogValidationTests {
               "stringUnit": {
                 "state": "translated",
                 "value": "Elemento %@"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithMissingSourceFormatTranslation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "Items: %lld": {
+          "localizations": {
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Elementos"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithEmptySourceShellFormatTranslation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "Items: %lld": {
+          "localizations": {
+            "en": {},
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Elementos"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithMissingSourceTargetOnlyVariation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%lld items": {
+          "localizations": {
+            "es": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elemento"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elementos"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithValidMissingSourceTargetOnlyVariation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%lld items": {
+          "localizations": {
+            "es": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld elemento"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld elementos"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithExplicitSourceValueDifferentFromKey = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "Items: %lld": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Items"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Elementos"
               }
             }
           }

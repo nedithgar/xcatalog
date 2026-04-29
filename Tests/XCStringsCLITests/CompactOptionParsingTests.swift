@@ -32,6 +32,32 @@ struct CompactOptionParsingTests {
         #expect(command.compact)
     }
 
+    @Test("batch add parses compact flag")
+    func batchAddParsesCompactFlag() throws {
+        let command = try BatchCommand.Add.parse([
+            "--file", "/tmp/Localizable.xcstrings",
+            "--entries", "Hello=es:Hola",
+            "--compact",
+        ])
+
+        #expect(command.file == "/tmp/Localizable.xcstrings")
+        #expect(command.entries == ["Hello=es:Hola"])
+        #expect(command.compact)
+    }
+
+    @Test("batch update parses compact flag")
+    func batchUpdateParsesCompactFlag() throws {
+        let command = try BatchCommand.Update.parse([
+            "--file", "/tmp/Localizable.xcstrings",
+            "--entries", "Hello=es:Hola",
+            "--compact",
+        ])
+
+        #expect(command.file == "/tmp/Localizable.xcstrings")
+        #expect(command.entries == ["Hello=es:Hola"])
+        #expect(command.compact)
+    }
+
     @Test("validate catalog parses compact flag")
     func validateCatalogParsesCompactFlag() throws {
         let command = try ValidateCommand.Catalog.parse([
