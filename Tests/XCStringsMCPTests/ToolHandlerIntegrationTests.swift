@@ -782,6 +782,55 @@ struct ToolHandlerIntegrationTests {
         #expect(translation["en"]?.value == "Hi there")
     }
 
+    @Test("UpdateTranslationHandler reports serialized state transitions for concurrent writes")
+    func updateTranslationHandlerConcurrentSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let requestedValues = (0..<8).map { "Concurrent update \($0)" }
+        let responses = try await withThrowingTaskGroup(of: MCPWriteResponse.self) { group in
+            for value in requestedValues {
+                group.addTask {
+                    let handler = UpdateTranslationHandler()
+                    let context = ToolContext(arguments: ToolArguments(raw: [
+                        "file": .string(path),
+                        "key": .string("Hello"),
+                        "language": .string("en"),
+                        "value": .string(value)
+                    ]))
+                    let result = try await handler.execute(with: context)
+                    return try JSONDecoder().decode(MCPWriteResponse.self, from: Data(result.utf8))
+                }
+            }
+
+            var responses: [MCPWriteResponse] = []
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses
+        }
+
+        let entries = try responses.map { response in
+            try #require(response.entries.first)
+        }
+        let finalValues = entries.compactMap(\.finalState?.value)
+        let previousValues = entries.compactMap(\.previousState?.value)
+        let requestedValueSet = Set(requestedValues)
+
+        #expect(responses.count == requestedValues.count)
+        #expect(entries.allSatisfy { $0.action == .updated })
+        #expect(Set(finalValues) == requestedValueSet)
+        #expect(previousValues.count == requestedValues.count)
+        #expect(previousValues.filter { $0 == "Hello" }.count == 1)
+        #expect(Set(previousValues).count == requestedValues.count)
+        #expect(Set(previousValues.filter { $0 != "Hello" }).isSubset(of: requestedValueSet))
+
+        let parser = XCStringsParser(path: path)
+        let translation = try await parser.getTranslation(key: "Hello", language: "en")
+        let finalCatalogValue = try #require(translation["en"]?.value)
+        #expect(requestedValueSet.contains(finalCatalogValue))
+    }
+
     @Test("UpdateTranslationsHandler returns structured response for multiple languages")
     func updateTranslationsHandler() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.singleKeyMultipleLangs)

@@ -30,15 +30,6 @@ struct MCPTranslationSnapshot: Codable, Sendable {
     let hasVariations: Bool
     let hasSubstitutions: Bool
 
-    init(info: TranslationInfo) {
-        self.key = info.key
-        self.language = info.language
-        self.value = info.value
-        self.state = info.state
-        self.hasVariations = info.hasVariations
-        self.hasSubstitutions = info.hasSubstitutions
-    }
-
     init(snapshot: BatchWriteTranslationSnapshot) {
         self.key = snapshot.key
         self.language = snapshot.language
@@ -133,38 +124,34 @@ struct MCPWriteResponse: Codable, Sendable {
 }
 
 enum MCPWriteResponseBuilder {
-    static func snapshot(
-        parser: XCStringsParser,
+    static func entries(
         key: String,
-        language: String
-    ) async -> MCPTranslationSnapshot? {
-        guard let translations = try? await parser.getTranslation(key: key, language: language),
-              let translation = translations[language] else {
-            return nil
+        languageResults: [BatchWriteLanguageResult]
+    ) -> [MCPWriteEntryResult] {
+        languageResults.sorted { $0.language < $1.language }.map { languageResult in
+            MCPWriteEntryResult(
+                key: key,
+                language: languageResult.language,
+                action: MCPWriteAction(languageResult.action),
+                previousState: languageResult.previousState.map(MCPTranslationSnapshot.init(snapshot:)),
+                finalState: languageResult.finalState.map(MCPTranslationSnapshot.init(snapshot:)),
+                placeholderValidation: languageResult.placeholderValidation
+            )
         }
-
-        return MCPTranslationSnapshot(info: translation)
     }
 
-    static func snapshots(
-        parser: XCStringsParser,
-        entries: [BatchTranslationEntry]
-    ) async -> [String: MCPTranslationSnapshot] {
-        var result: [String: MCPTranslationSnapshot] = [:]
-
-        for entry in entries {
-            for language in entry.translations.keys {
-                if let snapshot = await snapshot(parser: parser, key: entry.key, language: language) {
-                    result[snapshotKey(entry.key, language)] = snapshot
-                }
-            }
+    static func deletedEntries(
+        key: String,
+        snapshots: [BatchWriteTranslationSnapshot]
+    ) -> [MCPWriteEntryResult] {
+        snapshots.sorted { $0.language < $1.language }.map { snapshot in
+            MCPWriteEntryResult(
+                key: key,
+                language: snapshot.language,
+                action: .deleted,
+                previousState: MCPTranslationSnapshot(snapshot: snapshot)
+            )
         }
-
-        return result
-    }
-
-    static func snapshotKey(_ key: String, _ language: String) -> String {
-        "\(key)\u{1F}\(language)"
     }
 
     static func validationWarnings(from validations: [PlaceholderValidationResult]) -> [String] {
@@ -176,5 +163,16 @@ enum MCPWriteResponseBuilder {
         return [
             "Placeholder validation passed for \(checkedCount) language\(checkedCount == 1 ? "" : "s")."
         ]
+    }
+}
+
+extension MCPWriteAction {
+    init(_ action: BatchWriteTranslationAction) {
+        switch action {
+        case .inserted:
+            self = .inserted
+        case .updated:
+            self = .updated
+        }
     }
 }

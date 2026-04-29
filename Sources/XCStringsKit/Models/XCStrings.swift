@@ -823,11 +823,18 @@ package struct TranslationWriteResult: Codable, Sendable {
     package let key: String
     package let languages: [String]
     package let placeholderValidations: [PlaceholderValidationResult]
+    package let languageResults: [BatchWriteLanguageResult]
 
-    package init(key: String, languages: [String], placeholderValidations: [PlaceholderValidationResult]) {
+    package init(
+        key: String,
+        languages: [String],
+        placeholderValidations: [PlaceholderValidationResult],
+        languageResults: [BatchWriteLanguageResult] = []
+    ) {
         self.key = key
         self.languages = languages
         self.placeholderValidations = placeholderValidations
+        self.languageResults = languageResults
     }
 
     package var placeholderValidationSummary: String {
@@ -837,6 +844,23 @@ package struct TranslationWriteResult: Codable, Sendable {
         }
 
         return "passed for \(checkedCount) language\(checkedCount == 1 ? "" : "s")"
+    }
+}
+
+/// Result of deleting one or more translations from a single key.
+package struct TranslationDeleteResult: Codable, Sendable {
+    package let key: String
+    package let languages: [String]
+    package let deletedTranslations: [BatchWriteTranslationSnapshot]
+
+    package init(
+        key: String,
+        languages: [String],
+        deletedTranslations: [BatchWriteTranslationSnapshot]
+    ) {
+        self.key = key
+        self.languages = languages
+        self.deletedTranslations = deletedTranslations
     }
 }
 

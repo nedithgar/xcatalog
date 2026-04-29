@@ -464,7 +464,7 @@ enum XCStringsWriter {
         return localization
     }
 
-    private static func translationSnapshot(
+    static func translationSnapshot(
         in file: XCStringsFile,
         key: String,
         language: String

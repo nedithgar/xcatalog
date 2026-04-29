@@ -14,26 +14,14 @@ struct AddTranslationHandler: ToolHandler {
         let value = try context.arguments.requireString("value")
 
         let parser = XCStringsParser(path: file)
-        let previousState = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language)
         let result = try await parser.addTranslation(key: key, language: language, value: value)
-        let finalState = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language)
-        let validation = result.placeholderValidations.first { $0.language == language }
         let response = MCPWriteResponse(
             file: file,
             operationType: .addTranslation,
             key: key,
             languages: [language],
             fileChanged: true,
-            entries: [
-                MCPWriteEntryResult(
-                    key: key,
-                    language: language,
-                    action: previousState == nil ? .inserted : .updated,
-                    previousState: previousState,
-                    finalState: finalState,
-                    placeholderValidation: validation
-                )
-            ],
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
             placeholderValidations: result.placeholderValidations.filter(\.checked),
             validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
         )
@@ -52,31 +40,14 @@ struct AddTranslationsHandler: ToolHandler {
         let translations = try context.arguments.requireTranslations("translations")
 
         let parser = XCStringsParser(path: file)
-        var previousStates: [String: MCPTranslationSnapshot] = [:]
-        for language in translations.keys {
-            if let snapshot = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language) {
-                previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)] = snapshot
-            }
-        }
         let result = try await parser.addTranslations(key: key, translations: translations)
-        let entries = await translations.keys.sorted().asyncMap { language in
-            let previousState = previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)]
-            return MCPWriteEntryResult(
-                key: key,
-                language: language,
-                action: previousState == nil ? .inserted : .updated,
-                previousState: previousState,
-                finalState: await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language),
-                placeholderValidation: result.placeholderValidations.first { $0.language == language }
-            )
-        }
         let response = MCPWriteResponse(
             file: file,
             operationType: .addTranslations,
             key: key,
             languages: translations.keys.sorted(),
             fileChanged: true,
-            entries: entries,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
             placeholderValidations: result.placeholderValidations.filter(\.checked),
             validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
         )
@@ -96,25 +67,14 @@ struct UpdateTranslationHandler: ToolHandler {
         let value = try context.arguments.requireString("value")
 
         let parser = XCStringsParser(path: file)
-        let previousState = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language)
         let result = try await parser.updateTranslation(key: key, language: language, value: value)
-        let finalState = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language)
         let response = MCPWriteResponse(
             file: file,
             operationType: .updateTranslation,
             key: key,
             languages: [language],
             fileChanged: true,
-            entries: [
-                MCPWriteEntryResult(
-                    key: key,
-                    language: language,
-                    action: .updated,
-                    previousState: previousState,
-                    finalState: finalState,
-                    placeholderValidation: result.placeholderValidations.first { $0.language == language }
-                )
-            ],
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
             placeholderValidations: result.placeholderValidations.filter(\.checked),
             validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
         )
@@ -133,30 +93,14 @@ struct UpdateTranslationsHandler: ToolHandler {
         let translations = try context.arguments.requireTranslations("translations")
 
         let parser = XCStringsParser(path: file)
-        var previousStates: [String: MCPTranslationSnapshot] = [:]
-        for language in translations.keys {
-            if let snapshot = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language) {
-                previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)] = snapshot
-            }
-        }
         let result = try await parser.updateTranslations(key: key, translations: translations)
-        let entries = await translations.keys.sorted().asyncMap { language in
-            MCPWriteEntryResult(
-                key: key,
-                language: language,
-                action: .updated,
-                previousState: previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)],
-                finalState: await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language),
-                placeholderValidation: result.placeholderValidations.first { $0.language == language }
-            )
-        }
         let response = MCPWriteResponse(
             file: file,
             operationType: .updateTranslations,
             key: key,
             languages: translations.keys.sorted(),
             fileChanged: true,
-            entries: entries,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
             placeholderValidations: result.placeholderValidations.filter(\.checked),
             validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
         )
@@ -191,16 +135,5 @@ struct RenameKeyHandler: ToolHandler {
             ]
         )
         return try JSONEncoderHelper.encode(response)
-    }
-}
-
-private extension Sequence {
-    func asyncMap<T>(_ transform: (Element) async -> T) async -> [T] {
-        var values: [T] = []
-        for element in self {
-            let value = await transform(element)
-            values.append(value)
-        }
-        return values
     }
 }

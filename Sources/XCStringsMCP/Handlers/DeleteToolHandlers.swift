@@ -40,22 +40,17 @@ struct DeleteTranslationHandler: ToolHandler {
         let language = try context.arguments.requireString("language")
 
         let parser = XCStringsParser(path: file)
-        let previousState = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language)
-        try await parser.deleteTranslation(key: key, language: language)
+        let result = try await parser.deleteTranslation(key: key, language: language)
         let response = MCPWriteResponse(
             file: file,
             operationType: .deleteTranslation,
             key: key,
             languages: [language],
             fileChanged: true,
-            entries: [
-                MCPWriteEntryResult(
-                    key: key,
-                    language: language,
-                    action: .deleted,
-                    previousState: previousState
-                )
-            ]
+            entries: MCPWriteResponseBuilder.deletedEntries(
+                key: key,
+                snapshots: result.deletedTranslations
+            )
         )
         return try JSONEncoderHelper.encode(response)
     }
@@ -72,28 +67,17 @@ struct DeleteTranslationsHandler: ToolHandler {
         let languages = try context.arguments.requireStringArray("languages")
 
         let parser = XCStringsParser(path: file)
-        var previousStates: [String: MCPTranslationSnapshot] = [:]
-        for language in languages {
-            if let snapshot = await MCPWriteResponseBuilder.snapshot(parser: parser, key: key, language: language) {
-                previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)] = snapshot
-            }
-        }
-        try await parser.deleteTranslations(key: key, languages: languages)
-        let entries = languages.sorted().map { language in
-            MCPWriteEntryResult(
-                key: key,
-                language: language,
-                action: .deleted,
-                previousState: previousStates[MCPWriteResponseBuilder.snapshotKey(key, language)]
-            )
-        }
+        let result = try await parser.deleteTranslations(key: key, languages: languages)
         let response = MCPWriteResponse(
             file: file,
             operationType: .deleteTranslations,
             key: key,
-            languages: languages,
+            languages: result.languages,
             fileChanged: true,
-            entries: entries
+            entries: MCPWriteResponseBuilder.deletedEntries(
+                key: key,
+                snapshots: result.deletedTranslations
+            )
         )
         return try JSONEncoderHelper.encode(response)
     }

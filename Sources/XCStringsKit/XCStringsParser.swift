@@ -203,14 +203,28 @@ package actor XCStringsParser {
     ) async throws -> TranslationWriteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
+            let previousState = XCStringsWriter.translationSnapshot(in: file, key: key, language: language)
             let validations = try XCStringsWriter.validateTranslationWrite(
                 for: key,
                 translations: [language: value],
                 in: file
             )
             let updated = try XCStringsWriter.addTranslation(to: file, key: key, language: language, value: value, allowOverwrite: allowOverwrite)
+            let languageResult = Self.writeLanguageResult(
+                key: key,
+                language: language,
+                action: previousState == nil ? .inserted : .updated,
+                previousState: previousState,
+                updatedFile: updated,
+                placeholderValidations: validations
+            )
             try fileHandler.save(updated)
-            return TranslationWriteResult(key: key, languages: [language], placeholderValidations: validations)
+            return TranslationWriteResult(
+                key: key,
+                languages: [language],
+                placeholderValidations: validations,
+                languageResults: [languageResult]
+            )
         }
     }
 
@@ -223,17 +237,35 @@ package actor XCStringsParser {
     ) async throws -> TranslationWriteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
+            let languages = translations.keys.sorted()
+            let previousStates = languages.reduce(into: [String: BatchWriteTranslationSnapshot]()) { result, language in
+                if let snapshot = XCStringsWriter.translationSnapshot(in: file, key: key, language: language) {
+                    result[language] = snapshot
+                }
+            }
             let validations = try XCStringsWriter.validateTranslationWrite(
                 for: key,
                 translations: translations,
                 in: file
             )
             let updated = try XCStringsWriter.addTranslations(to: file, key: key, translations: translations, allowOverwrite: allowOverwrite)
+            let languageResults = languages.map { language in
+                let previousState = previousStates[language]
+                return Self.writeLanguageResult(
+                    key: key,
+                    language: language,
+                    action: previousState == nil ? .inserted : .updated,
+                    previousState: previousState,
+                    updatedFile: updated,
+                    placeholderValidations: validations
+                )
+            }
             try fileHandler.save(updated)
             return TranslationWriteResult(
                 key: key,
-                languages: translations.keys.sorted(),
-                placeholderValidations: validations
+                languages: languages,
+                placeholderValidations: validations,
+                languageResults: languageResults
             )
         }
     }
@@ -243,20 +275,28 @@ package actor XCStringsParser {
     package func updateTranslation(key: String, language: String, value: String) async throws -> TranslationWriteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
-            guard file.strings[key] != nil else {
-                throw XCStringsError.keyNotFound(key: key)
-            }
-            guard file.strings[key]?.localizations?[language] != nil else {
-                throw XCStringsError.languageNotFound(language: language, key: key)
-            }
+            let previousState = try Self.requireTranslationSnapshot(in: file, key: key, language: language)
             let validations = try XCStringsWriter.validateTranslationWrite(
                 for: key,
                 translations: [language: value],
                 in: file
             )
             let updated = try XCStringsWriter.updateTranslation(in: file, key: key, language: language, value: value)
+            let languageResult = Self.writeLanguageResult(
+                key: key,
+                language: language,
+                action: .updated,
+                previousState: previousState,
+                updatedFile: updated,
+                placeholderValidations: validations
+            )
             try fileHandler.save(updated)
-            return TranslationWriteResult(key: key, languages: [language], placeholderValidations: validations)
+            return TranslationWriteResult(
+                key: key,
+                languages: [language],
+                placeholderValidations: validations,
+                languageResults: [languageResult]
+            )
         }
     }
 
@@ -265,25 +305,37 @@ package actor XCStringsParser {
     package func updateTranslations(key: String, translations: [String: String]) async throws -> TranslationWriteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
-            guard file.strings[key] != nil else {
-                throw XCStringsError.keyNotFound(key: key)
-            }
-            for language in translations.keys {
-                guard file.strings[key]?.localizations?[language] != nil else {
-                    throw XCStringsError.languageNotFound(language: language, key: key)
+            let languages = translations.keys.sorted()
+            let previousStates = try Dictionary(
+                uniqueKeysWithValues: languages.map { language in
+                    (
+                        language,
+                        try Self.requireTranslationSnapshot(in: file, key: key, language: language)
+                    )
                 }
-            }
+            )
             let validations = try XCStringsWriter.validateTranslationWrite(
                 for: key,
                 translations: translations,
                 in: file
             )
             let updated = try XCStringsWriter.updateTranslations(in: file, key: key, translations: translations)
+            let languageResults = languages.map { language in
+                Self.writeLanguageResult(
+                    key: key,
+                    language: language,
+                    action: .updated,
+                    previousState: previousStates[language],
+                    updatedFile: updated,
+                    placeholderValidations: validations
+                )
+            }
             try fileHandler.save(updated)
             return TranslationWriteResult(
                 key: key,
-                languages: translations.keys.sorted(),
-                placeholderValidations: validations
+                languages: languages,
+                placeholderValidations: validations,
+                languageResults: languageResults
             )
         }
     }
@@ -454,20 +506,71 @@ package actor XCStringsParser {
     }
 
     /// Delete a translation for a specific language
-    package func deleteTranslation(key: String, language: String) async throws {
+    @discardableResult
+    package func deleteTranslation(key: String, language: String) async throws -> TranslationDeleteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
+            let previousState = try Self.requireTranslationSnapshot(in: file, key: key, language: language)
             let updated = try XCStringsWriter.deleteTranslation(from: file, key: key, language: language)
             try fileHandler.save(updated)
+            return TranslationDeleteResult(
+                key: key,
+                languages: [language],
+                deletedTranslations: [previousState]
+            )
         }
     }
 
     /// Delete translations for multiple languages
-    package func deleteTranslations(key: String, languages: [String]) async throws {
+    @discardableResult
+    package func deleteTranslations(key: String, languages: [String]) async throws -> TranslationDeleteResult {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
+            let deletedTranslations = try languages
+                .map { language in
+                    try Self.requireTranslationSnapshot(in: file, key: key, language: language)
+                }
+                .sorted { lhs, rhs in
+                    lhs.language < rhs.language
+                }
             let updated = try XCStringsWriter.deleteTranslations(from: file, key: key, languages: languages)
             try fileHandler.save(updated)
+            return TranslationDeleteResult(
+                key: key,
+                languages: languages.sorted(),
+                deletedTranslations: deletedTranslations
+            )
         }
+    }
+
+    private static func writeLanguageResult(
+        key: String,
+        language: String,
+        action: BatchWriteTranslationAction,
+        previousState: BatchWriteTranslationSnapshot?,
+        updatedFile: XCStringsFile,
+        placeholderValidations: [PlaceholderValidationResult]
+    ) -> BatchWriteLanguageResult {
+        BatchWriteLanguageResult(
+            language: language,
+            action: action,
+            previousState: previousState,
+            finalState: XCStringsWriter.translationSnapshot(in: updatedFile, key: key, language: language),
+            placeholderValidation: placeholderValidations.first { $0.key == key && $0.language == language }
+        )
+    }
+
+    private static func requireTranslationSnapshot(
+        in file: XCStringsFile,
+        key: String,
+        language: String
+    ) throws -> BatchWriteTranslationSnapshot {
+        guard file.strings[key] != nil else {
+            throw XCStringsError.keyNotFound(key: key)
+        }
+        guard let snapshot = XCStringsWriter.translationSnapshot(in: file, key: key, language: language) else {
+            throw XCStringsError.languageNotFound(language: language, key: key)
+        }
+        return snapshot
     }
 }

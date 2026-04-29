@@ -161,14 +161,3 @@ private func batchResponseEntries(
 
     return responseEntries
 }
-
-private extension MCPWriteAction {
-    init(_ action: BatchWriteTranslationAction) {
-        switch action {
-        case .inserted:
-            self = .inserted
-        case .updated:
-            self = .updated
-        }
-    }
-}
