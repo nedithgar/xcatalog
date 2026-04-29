@@ -359,7 +359,7 @@ enum XCStringsWriter {
             }
         }
 
-        return try translations.map { language, value in
+        var validations = try translations.map { language, value in
             guard entry.localizations?[file.sourceLanguage]?.hasRichContent != true,
                   entry.localizations?[language]?.hasRichContent != true else {
                 throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
@@ -377,6 +377,21 @@ enum XCStringsWriter {
             try throwIfInvalid(validation)
             return validation
         }
+
+        let existingSourceValue = entry.localizations?[file.sourceLanguage]?.stringUnit?.value ?? key
+        if let incomingSourceValue = translations[file.sourceLanguage],
+           incomingSourceValue != existingSourceValue {
+            let existingTargetValidations = try validateExistingTargets(
+                for: key,
+                incomingSourceValue: incomingSourceValue,
+                replacingLanguages: Set(translations.keys),
+                in: entry,
+                sourceLanguage: file.sourceLanguage
+            )
+            validations.append(contentsOf: existingTargetValidations)
+        }
+
+        return validations
     }
 
     private static func throwIfInvalid(_ validation: PlaceholderValidationResult) throws {
@@ -387,6 +402,43 @@ enum XCStringsWriter {
                 diagnostics: validation.diagnostics
             )
         }
+    }
+
+    private static func validateExistingTargets(
+        for key: String,
+        incomingSourceValue: String,
+        replacingLanguages: Set<String>,
+        in entry: StringEntry,
+        sourceLanguage: String
+    ) throws -> [PlaceholderValidationResult] {
+        var validations: [PlaceholderValidationResult] = []
+
+        for (language, localization) in entry.localizations ?? [:] {
+            guard language != sourceLanguage,
+                  !replacingLanguages.contains(language) else {
+                continue
+            }
+
+            guard localization.stringUnit?.value != nil || localization.hasRichContent else {
+                continue
+            }
+
+            guard localization.hasRichContent != true,
+                  let targetValue = localization.stringUnit?.value else {
+                throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
+            }
+
+            let validation = FormatStringSafety.validate(
+                key: key,
+                language: language,
+                sourceValue: incomingSourceValue,
+                targetValue: targetValue
+            )
+            try throwIfInvalid(validation)
+            validations.append(validation)
+        }
+
+        return validations
     }
 
     private static func setPlainLocalization(

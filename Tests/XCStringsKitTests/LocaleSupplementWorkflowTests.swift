@@ -111,6 +111,51 @@ struct LocaleSupplementWorkflowTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == originalData)
     }
 
+    @Test(
+        "compact dry-run projection keeps keys untranslated when compile validation blocks writes",
+        arguments: [LocaleSupplementCompileStatus.failed, .unavailable]
+    )
+    func compactDryRunProjectionKeepsKeysUntranslatedWhenCompileValidationBlocksWrites(
+        status: LocaleSupplementCompileStatus
+    ) async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.multipleKeysPartialTranslations)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let validator: LocaleSupplementCompileValidator = { _, _ in
+            LocaleSupplementCompileValidation(
+                status: status,
+                command: ["test-validator"],
+                diagnostics: "Projected catalog could not be accepted."
+            )
+        }
+
+        let result = try await parser.supplementLocale(
+            language: "ja",
+            translations: [
+                "Goodbye": "さようなら",
+                "Hello": "こんにちは",
+            ],
+            dryRun: true,
+            validateCompile: true,
+            compileValidator: validator
+        )
+        let currentUntranslated = try await parser.listUntranslated(for: "ja")
+        let projectedUntranslated = result.projectedRemainingUntranslatedKeys(
+            currentUntranslatedKeys: currentUntranslated
+        )
+        let compact = result.compact(remainingUntranslatedKeys: projectedUntranslated)
+
+        #expect(result.status == .dryRun)
+        #expect(result.success == false)
+        #expect(result.wouldWrite)
+        #expect(result.compileValidation.status == status)
+        #expect(currentUntranslated == ["Goodbye"])
+        #expect(projectedUntranslated == currentUntranslated)
+        #expect(compact.remainingUntranslatedKeys == currentUntranslated)
+        #expect(compact.remainingUntranslatedCount == currentUntranslated.count)
+    }
+
     @Test("supplementLocale dry-run compile validation skips blocked atomic plans")
     func supplementLocaleDryRunCompileValidationSkipsBlockedPlan() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)

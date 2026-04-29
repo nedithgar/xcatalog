@@ -123,6 +123,12 @@ package extension LocaleSupplementResult {
             return currentUntranslatedKeys
         }
 
+        if plan.validateCompile {
+            guard compileValidation.status == .passed else {
+                return currentUntranslatedKeys
+            }
+        }
+
         let projectedWrites = Set(
             plan.entries
                 .filter { $0.action == .insert || $0.action == .update }

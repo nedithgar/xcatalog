@@ -44,6 +44,21 @@ struct XCStringsWriterTests {
         #expect(file.strings["Hello"]?.localizations?["en"]?.stringUnit?.value == "Updated")
     }
 
+    @Test("addTranslation overwrite validates existing target languages when source value changes")
+    func addTranslationOverwriteValidatesExistingTargetsWhenSourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "photo.title",
+                language: "en",
+                value: "Photo %@",
+                allowOverwrite: true
+            )
+        }
+    }
+
     @Test("addTranslation overwrite preserves existing localization metadata")
     func addTranslationOverwritePreservesLocalizationMetadata() throws {
         var file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
@@ -207,6 +222,39 @@ struct XCStringsWriterTests {
         }
     }
 
+    @Test("addTranslations overwrite validates existing target languages when source value changes")
+    func addTranslationsOverwriteValidatesExistingTargetsWhenSourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslations(
+                to: file,
+                key: "photo.title",
+                translations: ["en": "Photo %@"],
+                allowOverwrite: true
+            )
+        }
+    }
+
+    @Test("addTranslations overwrite skips existing target validation when source value is unchanged")
+    func addTranslationsOverwriteSkipsExistingTargetValidationWhenSourceValueIsUnchanged() throws {
+        var file = try loadFixture(Self.catalogWithExistingTargetMismatch)
+
+        file = try XCStringsWriter.addTranslations(
+            to: file,
+            key: "photo.title",
+            translations: [
+                "en": "Photo %@",
+                "de": "Foto %@",
+            ],
+            allowOverwrite: true
+        )
+
+        #expect(file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo %@")
+        #expect(file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto")
+        #expect(file.strings["photo.title"]?.localizations?["de"]?.stringUnit?.value == "Foto %@")
+    }
+
     @Test("addTranslations rejects non-translatable keys")
     func addTranslationsRejectNonTranslatableKey() throws {
         let file = try loadFixture(TestFixtures.withNonTranslatableKey)
@@ -239,6 +287,35 @@ struct XCStringsWriterTests {
         )
 
         assertJapaneseSettingsMetadataPreserved(in: file, value: "更新済み設定")
+    }
+
+    @Test("updateTranslation validates existing target languages when source value changes")
+    func updateTranslationValidatesExistingTargetsWhenSourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslation(
+                in: file,
+                key: "photo.title",
+                language: "en",
+                value: "Photo %@"
+            )
+        }
+    }
+
+    @Test("updateTranslation skips existing target validation when source value is unchanged")
+    func updateTranslationSkipsExistingTargetValidationWhenSourceValueIsUnchanged() throws {
+        var file = try loadFixture(Self.catalogWithExistingTargetMismatch)
+
+        file = try XCStringsWriter.updateTranslation(
+            in: file,
+            key: "photo.title",
+            language: "en",
+            value: "Photo %@"
+        )
+
+        #expect(file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo %@")
+        #expect(file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto")
     }
 
     @Test("updateTranslation throws for non-existent key")
@@ -331,6 +408,19 @@ struct XCStringsWriterTests {
         #expect(file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto %@")
     }
 
+    @Test("updateTranslations validates existing target languages when only source value changes")
+    func updateTranslationsValidatesExistingTargetsWhenOnlySourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslations(
+                in: file,
+                key: "photo.title",
+                translations: ["en": "Photo %@"]
+            )
+        }
+    }
+
     @Test("addTranslationsBatch overwrite preserves existing localization metadata")
     func addTranslationsBatchOverwritePreservesLocalizationMetadata() throws {
         let file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
@@ -345,6 +435,27 @@ struct XCStringsWriterTests {
 
         #expect(result.result.successCount == 1)
         assertJapaneseSettingsMetadataPreserved(in: result.file, value: "更新済み設定")
+    }
+
+    @Test("addTranslationsBatch overwrite validates existing target languages when only source value changes")
+    func addTranslationsBatchOverwriteValidatesExistingTargetsWhenOnlySourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        let result = XCStringsWriter.addTranslationsBatch(
+            to: file,
+            entries: [
+                BatchTranslationEntry(
+                    key: "photo.title",
+                    translations: ["en": "Photo %@"]
+                ),
+            ],
+            allowOverwrite: true
+        )
+
+        #expect(result.result.successCount == 0)
+        #expect(result.result.failedCount == 1)
+        #expect(result.file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo")
+        #expect(result.file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto")
     }
 
     @Test("updateTranslationsBatch preserves existing localization metadata")
@@ -375,6 +486,26 @@ struct XCStringsWriterTests {
                         "en": "Photo %@",
                         "es": "Foto",
                     ]
+                ),
+            ]
+        )
+
+        #expect(result.result.successCount == 0)
+        #expect(result.result.failedCount == 1)
+        #expect(result.file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo")
+        #expect(result.file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto")
+    }
+
+    @Test("updateTranslationsBatch validates existing target languages when only source value changes")
+    func updateTranslationsBatchValidatesExistingTargetsWhenOnlySourceValueChanges() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        let result = XCStringsWriter.updateTranslationsBatch(
+            in: file,
+            entries: [
+                BatchTranslationEntry(
+                    key: "photo.title",
+                    translations: ["en": "Photo %@"]
                 ),
             ]
         )
@@ -620,6 +751,31 @@ struct XCStringsWriterTests {
               "stringUnit": {
                 "state": "translated",
                 "value": "Photo"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Foto"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithExistingTargetMismatch = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "photo.title": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Photo %@"
               }
             },
             "es": {
