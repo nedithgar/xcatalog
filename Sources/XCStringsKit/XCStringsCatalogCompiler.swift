@@ -106,7 +106,7 @@ enum XCStringsCatalogCompiler {
         return path.isEmpty ? nil : path
     }
 
-    private static func run(_ command: [String]) -> ProcessResult {
+    static func run(_ command: [String]) -> ProcessResult {
         guard let executable = command.first else {
             return ProcessResult(exitCode: 1, output: "Missing executable.")
         }
@@ -118,20 +118,48 @@ enum XCStringsCatalogCompiler {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        let output = ProcessOutputBuffer()
+        let readHandle = pipe.fileHandleForReading
+        readHandle.readabilityHandler = { handle in
+            output.append(handle.availableData)
+        }
 
         do {
             try process.run()
             process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return ProcessResult(exitCode: process.terminationStatus, output: output)
+            readHandle.readabilityHandler = nil
+            output.append(readHandle.availableData)
+            return ProcessResult(exitCode: process.terminationStatus, output: output.stringValue)
         } catch {
+            readHandle.readabilityHandler = nil
             return ProcessResult(exitCode: 1, output: error.localizedDescription)
         }
     }
 
-    private struct ProcessResult {
+    struct ProcessResult {
         let exitCode: Int32
         let output: String
+    }
+}
+
+private final class ProcessOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    var stringValue: String {
+        lock.lock()
+        let snapshot = data
+        lock.unlock()
+        return String(data: snapshot, encoding: .utf8) ?? ""
+    }
+
+    func append(_ newData: Data) {
+        guard !newData.isEmpty else {
+            return
+        }
+
+        lock.lock()
+        data.append(newData)
+        lock.unlock()
     }
 }
