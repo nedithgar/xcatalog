@@ -80,8 +80,31 @@ struct PreflightClassifierTests {
         #expect(variation.placeholderMetadata.variationPlaceholders.flatMap(\.placeholders).map(\.raw) == ["%lld", "%lld"])
     }
 
+    @Test("preflightLocale sorts entries without relying on insertion order")
+    func preflightLocaleSortsEntriesWithoutRelyingOnInsertionOrder() throws {
+        var strings = OrderedStringDictionary<StringEntry>()
+        strings["z.missing"] = stringEntry(sourceValue: "Z")
+        strings["a.missing"] = stringEntry(sourceValue: "A")
+        strings["m.missing"] = stringEntry(sourceValue: "M")
+
+        let file = XCStringsFile(sourceLanguage: "en", strings: strings)
+        let report = XCStringsPreflightClassifier(file: file).preflightLocale("es")
+
+        #expect(report.missingSimpleStringUnitKeys.map(\.key) == ["a.missing", "m.missing", "z.missing"])
+    }
+
     private func loadFixture(_ content: String) throws -> XCStringsFile {
         let data = content.data(using: .utf8)!
         return try JSONDecoder().decode(XCStringsFile.self, from: data)
+    }
+
+    private func stringEntry(sourceValue: String) -> StringEntry {
+        StringEntry(
+            localizations: [
+                "en": Localization(
+                    stringUnit: StringUnit(value: sourceValue)
+                )
+            ]
+        )
     }
 }

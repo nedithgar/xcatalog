@@ -51,4 +51,18 @@ struct OrderedStringDictionaryTests {
         #expect(dictionary["second"] == 8)
         #expect(dictionary["third"] == 8)
     }
+
+    @Test("sortedByKey returns key value pairs without mutating order")
+    func sortedByKeyReturnsPairsWithoutMutatingOrder() throws {
+        var dictionary = OrderedStringDictionary<Int>()
+        dictionary["z"] = 26
+        dictionary["a"] = 1
+        dictionary["m"] = 13
+
+        let sorted = dictionary.sortedByKey()
+
+        #expect(sorted.map(\.key) == ["a", "m", "z"])
+        #expect(sorted.map(\.value) == [1, 13, 26])
+        #expect(dictionary.keys == ["z", "a", "m"])
+    }
 }

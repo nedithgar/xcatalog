@@ -18,11 +18,7 @@ package struct XCStringsPreflightClassifier: Sendable {
         var translatedKeys: [PreflightKeyInfo] = []
         var unsafeToWriteKeys: [PreflightKeyInfo] = []
 
-        for key in file.strings.keys.sorted() {
-            guard let entry = file.strings[key] else {
-                continue
-            }
-
+        for (key, entry) in file.strings.sortedByKey() {
             let info = classify(key: key, entry: entry, targetLanguage: targetLanguage)
 
             if info.extractionState == "stale" {

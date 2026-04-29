@@ -76,6 +76,10 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
         elements.map(\.value)
     }
 
+    package func sortedByKey() -> [Element] {
+        elements.sorted { $0.key < $1.key }
+    }
+
     @discardableResult
     package mutating func removeValue(forKey key: String) -> Value? {
         guard let index = elements.firstIndex(where: { $0.key == key }) else {
