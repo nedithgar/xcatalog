@@ -346,12 +346,19 @@ enum XCStringsWriter {
         }
 
         guard let entry = file.strings[key] else {
-            let sourceValue = translations[file.sourceLanguage] ?? key
             return try sortedTranslations(translations).map { language, value in
+                let sourceValue = try sourceValueForPlaceholderValidation(
+                    key: key,
+                    language: language,
+                    value: value,
+                    sourceLanguage: file.sourceLanguage,
+                    incomingSourceValue: translations[file.sourceLanguage],
+                    existingSourceValue: nil
+                )
                 let validation = FormatStringSafety.validate(
                     key: key,
                     language: language,
-                    sourceValue: language == file.sourceLanguage ? value : sourceValue,
+                    sourceValue: sourceValue,
                     targetValue: value
                 )
                 try throwIfInvalid(validation)
@@ -365,13 +372,18 @@ enum XCStringsWriter {
                 throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
             }
 
-            let sourceValue = translations[file.sourceLanguage]
-                ?? entry.localizations?[file.sourceLanguage]?.stringUnit?.value
-                ?? key
+            let sourceValue = try sourceValueForPlaceholderValidation(
+                key: key,
+                language: language,
+                value: value,
+                sourceLanguage: file.sourceLanguage,
+                incomingSourceValue: translations[file.sourceLanguage],
+                existingSourceValue: entry.localizations?[file.sourceLanguage]?.stringUnit?.value
+            )
             let validation = FormatStringSafety.validate(
                 key: key,
                 language: language,
-                sourceValue: language == file.sourceLanguage ? value : sourceValue,
+                sourceValue: sourceValue,
                 targetValue: value
             )
             try throwIfInvalid(validation)
@@ -392,6 +404,39 @@ enum XCStringsWriter {
         }
 
         return validations
+    }
+
+    private static func sourceValueForPlaceholderValidation(
+        key: String,
+        language: String,
+        value: String,
+        sourceLanguage: String,
+        incomingSourceValue: String?,
+        existingSourceValue: String?
+    ) throws -> String {
+        if language == sourceLanguage {
+            return value
+        }
+
+        if let incomingSourceValue {
+            return incomingSourceValue
+        }
+
+        if let existingSourceValue {
+            return existingSourceValue
+        }
+
+        let keyPlaceholders = FormatStringSafety.placeholders(in: key)
+        let targetPlaceholders = FormatStringSafety.placeholders(in: value)
+        if keyPlaceholders.isEmpty, !targetPlaceholders.isEmpty {
+            throw XCStringsError.missingSourceValueForFormatValidation(
+                key: key,
+                language: language,
+                sourceLanguage: sourceLanguage
+            )
+        }
+
+        return key
     }
 
     private static func throwIfInvalid(_ validation: PlaceholderValidationResult) throws {

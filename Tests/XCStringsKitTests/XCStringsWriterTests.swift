@@ -83,6 +83,54 @@ struct XCStringsWriterTests {
         }
     }
 
+    @Test("addTranslation requires source value for placeholder-bearing target on new symbolic key")
+    func addTranslationRequiresSourceValueForPlaceholderBearingTargetOnNewSymbolicKey() throws {
+        let file = try loadFixture(TestFixtures.empty)
+
+        do {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "photo.count",
+                language: "es",
+                value: "%lld fotos"
+            )
+            Issue.record("Expected missing source value error")
+        } catch {
+            expectMissingSourceValueError(error, key: "photo.count", language: "es")
+        }
+    }
+
+    @Test("addTranslation requires source value for placeholder-bearing target on existing symbolic key")
+    func addTranslationRequiresSourceValueForPlaceholderBearingTargetOnExistingSymbolicKey() throws {
+        let file = try loadFixture(Self.catalogWithSymbolicKeyWithoutSource)
+
+        do {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "photo.count",
+                language: "es",
+                value: "%lld fotos"
+            )
+            Issue.record("Expected missing source value error")
+        } catch {
+            expectMissingSourceValueError(error, key: "photo.count", language: "es")
+        }
+    }
+
+    @Test("addTranslation uses placeholder-bearing key as source when no source localization exists")
+    func addTranslationUsesPlaceholderBearingKeyAsSourceWhenNoSourceLocalizationExists() throws {
+        var file = try loadFixture(TestFixtures.empty)
+
+        file = try XCStringsWriter.addTranslation(
+            to: file,
+            key: "Photo %lld",
+            language: "es",
+            value: "Foto %lld"
+        )
+
+        #expect(file.strings["Photo %lld"]?.localizations?["es"]?.stringUnit?.value == "Foto %lld")
+    }
+
     @Test("addTranslation accepts reordered positional placeholders")
     func addTranslationAcceptsReorderedPositionalPlaceholders() throws {
         var file = try loadFixture(TestFixtures.catalogPersistenceRegression)
@@ -713,6 +761,27 @@ struct XCStringsWriterTests {
         #expect(Bool(false))
     }
 
+    private func expectMissingSourceValueError(
+        _ error: any Error,
+        key: String,
+        language: String,
+        sourceLanguage: String = "en"
+    ) {
+        guard let error = error as? XCStringsError else {
+            Issue.record("Expected XCStringsError, got \(error)")
+            return
+        }
+
+        guard case let .missingSourceValueForFormatValidation(actualKey, actualLanguage, actualSourceLanguage) = error else {
+            Issue.record("Expected missingSourceValueForFormatValidation, got \(error)")
+            return
+        }
+
+        #expect(actualKey == key)
+        #expect(actualLanguage == language)
+        #expect(actualSourceLanguage == sourceLanguage)
+    }
+
     private static let catalogWithTargetLocalizationMetadata = """
     {
       "sourceLanguage": "en",
@@ -735,6 +804,18 @@ struct XCStringsWriterTests {
               "vendorStatus": "approved"
             }
           }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithSymbolicKeyWithoutSource = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "photo.count": {
+          "localizations": {}
         }
       },
       "version": "1.0"

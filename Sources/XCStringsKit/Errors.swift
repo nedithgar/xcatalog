@@ -9,6 +9,7 @@ package enum XCStringsError: Error, LocalizedError, Sendable {
     case keyAlreadyExists(key: String)
     case languageNotFound(language: String, key: String)
     case nonTranslatableKey(key: String)
+    case missingSourceValueForFormatValidation(key: String, language: String, sourceLanguage: String)
     case unsafeFormatString(key: String, language: String, diagnostics: [String])
     case richLocalizationUnsupported(key: String, language: String)
     case concurrentWriteConflict(path: String)
@@ -32,6 +33,8 @@ package enum XCStringsError: Error, LocalizedError, Sendable {
             return "Language '\(language)' not found for key '\(key)'"
         case let .nonTranslatableKey(key):
             return "Cannot add or update translations for non-translatable key '\(key)'. Change shouldTranslate before writing localizations."
+        case let .missingSourceValueForFormatValidation(key, language, sourceLanguage):
+            return "Cannot validate format placeholders for key '\(key)' language '\(language)' because source language '\(sourceLanguage)' has no concrete stringUnit value. Add the '\(sourceLanguage)' translation in the same request or write it before adding placeholder-bearing target translations."
         case let .unsafeFormatString(key, language, diagnostics):
             return "Unsafe format string for key '\(key)' language '\(language)': \(diagnostics.joined(separator: " "))"
         case let .richLocalizationUnsupported(key, language):
