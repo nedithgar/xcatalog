@@ -38,7 +38,7 @@ struct XCStringsFileHandler: Sendable {
         let url = URL(fileURLWithPath: path)
         let data = try encodedData(
             for: file,
-            appendTrailingNewline: existingFileHasTrailingNewline(at: url) ?? true
+            appendTrailingNewline: XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) ?? true
         )
 
         do {
@@ -78,19 +78,31 @@ struct XCStringsFileHandler: Sendable {
         }
     }
 
-    private func existingFileHasTrailingNewline(at url: URL) -> Bool? {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-            return nil
-        }
-
-        return data.hasTrailingNewline
-    }
 }
 
-private extension Data {
-    var hasTrailingNewline: Bool {
-        last == 0x0A
+enum XCStringsFileTrailingNewlineDetector {
+    static func hasTrailingNewline(at url: URL) -> Bool? {
+        do {
+            let fileHandle = try FileHandle(forReadingFrom: url)
+            defer { try? fileHandle.close() }
+
+            let fileSize = try fileHandle.seekToEnd()
+            guard fileSize > 0 else {
+                return nil
+            }
+
+            try fileHandle.seek(toOffset: fileSize - 1)
+            guard let finalByte = try fileHandle.read(upToCount: 1)?.first else {
+                return nil
+            }
+
+            return finalByte == lineFeedByte
+        } catch {
+            return nil
+        }
     }
+
+    private static let lineFeedByte: UInt8 = 0x0A
 }
 
 private extension XCStringsFile {

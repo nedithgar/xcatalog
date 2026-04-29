@@ -140,6 +140,68 @@ struct XCStringsFileHandlerTests {
         #expect(!savedContent.hasSuffix("\n"))
     }
 
+    @Test("save preserves trailing newline according to the existing file's final byte", arguments: TrailingNewlineSaveCase.cases)
+    func savePreservesTrailingNewlineFinalByte(testCase: TrailingNewlineSaveCase) throws {
+        let path = try TestHelper.createTempFile(content: testCase.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        let file = try handler.load()
+
+        try handler.save(file)
+
+        let savedData = try Data(contentsOf: URL(fileURLWithPath: path))
+        #expect((savedData.last == UInt8(0x0A)) == testCase.expectedHasTrailingNewline)
+    }
+
+    @Test("save writes trailing newline when target file does not exist yet")
+    func saveMissingFileDefaultsToTrailingNewline() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("saved_\(UUID().uuidString).xcstrings")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let handler = XCStringsFileHandler(path: url.path)
+        try handler.save(XCStringsFile(sourceLanguage: "en"))
+
+        let savedData = try Data(contentsOf: url)
+        #expect(savedData.last == UInt8(0x0A))
+    }
+
+    @Test("trailing newline detector reports final byte semantics", arguments: TrailingNewlineDetectionCase.cases)
+    func trailingNewlineDetectorReportsFinalByte(testCase: TrailingNewlineDetectionCase) throws {
+        let url = try createTempDataFile(bytes: testCase.bytes)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == testCase.expected)
+    }
+
+    @Test("trailing newline detector returns nil for a missing path")
+    func trailingNewlineDetectorMissingPath() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing_\(UUID().uuidString).xcstrings")
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == nil)
+    }
+
+    @Test("trailing newline detector returns nil for a directory path")
+    func trailingNewlineDetectorDirectoryPath() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xcatalog_dir_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == nil)
+    }
+
+    @Test("trailing newline detector handles large files from the final byte")
+    func trailingNewlineDetectorHandlesLargeFiles() throws {
+        let bytes = [UInt8](repeating: 0x20, count: 1_048_576) + [0x0A]
+        let url = try createTempDataFile(bytes: bytes)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == true)
+    }
+
     @Test("save preserves non-translation metadata")
     func savePreservesNonTranslationMetadata() throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.withNonTranslatableKey)
@@ -223,4 +285,50 @@ struct XCStringsFileHandlerTests {
             try handler.create(sourceLanguage: "en")
         }
     }
+
+    private func createTempDataFile(bytes: [UInt8]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_\(UUID().uuidString).xcstrings")
+        try Data(bytes).write(to: url, options: .atomic)
+        return url
+    }
+}
+
+struct TrailingNewlineSaveCase: CustomTestStringConvertible, Sendable {
+    let name: String
+    let suffix: String
+    let expectedHasTrailingNewline: Bool
+
+    var content: String {
+        #"{"sourceLanguage":"en","strings":{},"version":"1.0"}"# + suffix
+    }
+
+    var testDescription: String { name }
+
+    static let cases: [Self] = [
+        Self(name: "line feed", suffix: "\n", expectedHasTrailingNewline: true),
+        Self(name: "carriage return plus line feed", suffix: "\r\n", expectedHasTrailingNewline: true),
+        Self(name: "no trailing newline", suffix: "", expectedHasTrailingNewline: false),
+        Self(name: "carriage return only", suffix: "\r", expectedHasTrailingNewline: false),
+        Self(name: "space after line feed", suffix: "\n ", expectedHasTrailingNewline: false),
+        Self(name: "tab after line feed", suffix: "\n\t", expectedHasTrailingNewline: false),
+    ]
+}
+
+struct TrailingNewlineDetectionCase: CustomTestStringConvertible, Sendable {
+    let name: String
+    let bytes: [UInt8]
+    let expected: Bool?
+
+    var testDescription: String { name }
+
+    static let cases: [Self] = [
+        Self(name: "empty file", bytes: [], expected: nil),
+        Self(name: "single line feed byte", bytes: [0x0A], expected: true),
+        Self(name: "single non-newline byte", bytes: [0x20], expected: false),
+        Self(name: "carriage return plus line feed", bytes: [0x0D, 0x0A], expected: true),
+        Self(name: "carriage return only", bytes: [0x0D], expected: false),
+        Self(name: "null byte after line feed", bytes: [0x7B, 0x7D, 0x0A, 0x00], expected: false),
+        Self(name: "space after line feed", bytes: [0x7B, 0x7D, 0x0A, 0x20], expected: false),
+    ]
 }
