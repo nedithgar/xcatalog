@@ -97,20 +97,28 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
     }
 
     package mutating func reorder(existingKeys preferredKeys: [String]) {
+        let elementsByKey = Dictionary(uniqueKeysWithValues: elements.map { ($0.key, $0) })
         var reordered: [Element] = []
         var consumed = Set<String>()
 
         for key in preferredKeys {
-            guard let index = elements.firstIndex(where: { $0.key == key }) else {
+            guard let element = elementsByKey[key], !consumed.contains(key) else {
                 continue
             }
 
-            reordered.append(elements[index])
+            reordered.append(element)
             consumed.insert(key)
         }
 
         reordered.append(contentsOf: elements.filter { !consumed.contains($0.key) })
         elements = reordered
+    }
+
+    package mutating func mutateValues(_ body: (String, inout Value) throws -> Void) rethrows {
+        for index in elements.indices {
+            let key = elements[index].key
+            try body(key, &elements[index].value)
+        }
     }
 
     package func makeIterator() -> IndexingIterator<[Element]> {

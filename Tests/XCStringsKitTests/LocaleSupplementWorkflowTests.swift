@@ -485,6 +485,28 @@ struct LocaleSupplementWorkflowTests {
         expectStringValue(localization.stringUnit?.unknownFields["reviewStatus"], equals: "approved")
     }
 
+    @Test("supplementLocale insert preserves empty target localization metadata")
+    func supplementLocaleInsertPreservesEmptyTargetLocalizationMetadata() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithEmptyTargetLocalizationMetadata)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let result = try await parser.supplementLocale(
+            language: "ja",
+            translations: ["settings.title": "設定"]
+        )
+
+        #expect(result.status == .written)
+        #expect(result.counts.inserted == 1)
+
+        let file = try XCStringsFileHandler(path: path).load()
+        let localization = try #require(file.strings["settings.title"]?.localizations?["ja"])
+        #expect(localization.stringUnit?.value == "設定")
+        #expect(localization.stringUnit?.state == "translated")
+        expectStringValue(localization.unknownFields["localizationNote"], equals: "reserved-for-review")
+        expectStringValue(localization.unknownFields["vendorStatus"], equals: "pending")
+    }
+
     @Test("supplementLocale reports missing keys as failed and preserves the file")
     func supplementLocaleReportsMissingKeysAsFailed() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
@@ -561,6 +583,29 @@ struct LocaleSupplementWorkflowTests {
               },
               "localizationNote": "reviewed-by-l10n",
               "vendorStatus": "approved"
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithEmptyTargetLocalizationMetadata = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "settings.title": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Settings"
+              }
+            },
+            "ja": {
+              "localizationNote": "reserved-for-review",
+              "vendorStatus": "pending"
             }
           }
         }

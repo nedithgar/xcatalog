@@ -93,30 +93,20 @@ private extension XCStringsFile {
     mutating func apply(_ keyOrder: XCStringsJSONKeyOrder) {
         strings.reorder(existingKeys: keyOrder.strings)
 
-        for key in strings.keys {
-            guard var entry = strings[key] else {
-                continue
-            }
-
-            if let localizationOrder = keyOrder.localizationsByStringKey[key] {
-                entry.localizations?.reorder(existingKeys: localizationOrder)
-            }
-
+        strings.mutateValues { key, entry in
             if var localizations = entry.localizations {
-                for language in localizations.keys {
-                    let substitutionOrderKey = [key, language].joined(separator: "\u{1F}")
-                    guard let substitutionOrder = keyOrder.substitutionsByStringKeyAndLanguage[substitutionOrderKey],
-                          var localization = localizations[language] else {
-                        continue
-                    }
+                if let localizationOrder = keyOrder.localizationsByStringKey[key] {
+                    localizations.reorder(existingKeys: localizationOrder)
+                }
 
-                    localization.substitutions?.reorder(existingKeys: substitutionOrder)
-                    localizations[language] = localization
+                localizations.mutateValues { language, localization in
+                    let substitutionOrderKey = [key, language].joined(separator: "\u{1F}")
+                    if let substitutionOrder = keyOrder.substitutionsByStringKeyAndLanguage[substitutionOrderKey] {
+                        localization.substitutions?.reorder(existingKeys: substitutionOrder)
+                    }
                 }
                 entry.localizations = localizations
             }
-
-            strings[key] = entry
         }
     }
 }

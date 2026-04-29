@@ -295,11 +295,7 @@ enum XCStringsLocaleSupplementer {
             }
 
             switch entry.action {
-            case .insert:
-                stringEntry.localizations?[plan.targetLanguage] = Localization(
-                    stringUnit: StringUnit(state: "translated", value: entry.proposedValue)
-                )
-            case .update:
+            case .insert, .update:
                 var localization = stringEntry.localizations?[plan.targetLanguage] ?? Localization()
                 localization.stringUnit = StringUnit(
                     state: localization.stringUnit?.state ?? "translated",
