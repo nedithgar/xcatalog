@@ -422,6 +422,7 @@ package enum XCStringsCatalogValidator {
         let variationResult = validateVariationPlaceholders(
             key: key,
             language: language,
+            sourceStringUnitValue: sourceLocalization.stringUnit?.value,
             sourceVariations: sourceLocalization.variations,
             targetVariations: targetLocalization.variations,
             sourceContext: sourceContext,
@@ -825,6 +826,7 @@ package enum XCStringsCatalogValidator {
     private static func validateVariationPlaceholders(
         key: String,
         language: String,
+        sourceStringUnitValue: String? = nil,
         sourceVariations: Variations?,
         targetVariations: Variations?,
         sourceContext: RichArgumentContext = .empty,
@@ -832,16 +834,43 @@ package enum XCStringsCatalogValidator {
         basePath: String
     ) -> (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue]) {
         var validations: [PlaceholderValidationResult] = []
-        var issues = compareVariationShape(
+        var issues: [CatalogValidationIssue] = []
+
+        let sourceValues = variationValues(in: sourceVariations)
+        let targetValues = variationValues(in: targetVariations)
+
+        if sourceValues.isEmpty,
+           let sourceStringUnitValue,
+           !targetValues.isEmpty {
+            for identity in targetValues.keys.sorted() {
+                guard let targetValue = targetValues[identity] else {
+                    continue
+                }
+                let validation = validatePlaceholderSet(
+                    key: key,
+                    language: language,
+                    sourceValue: sourceStringUnitValue,
+                    targetValue: targetValue,
+                    sourceContext: sourceContext,
+                    targetContext: targetContext
+                )
+                if validation.checked {
+                    validations.append(validation)
+                }
+                issues.append(contentsOf: issuesForInvalidValidation(validation, path: "\(basePath).\(identity)"))
+            }
+
+            return (validations, issues)
+        }
+
+        issues.append(contentsOf: compareVariationShape(
             key: key,
             language: language,
             sourceVariations: sourceVariations,
             targetVariations: targetVariations,
             basePath: basePath
-        )
+        ))
 
-        let sourceValues = variationValues(in: sourceVariations)
-        let targetValues = variationValues(in: targetVariations)
         for identity in sourceValues.keys.sorted() {
             guard let sourceValue = sourceValues[identity],
                   let targetValue = targetValues[identity] else {

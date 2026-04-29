@@ -188,6 +188,55 @@ struct CatalogValidationTests {
         #expect(report.issues.isEmpty)
     }
 
+    @Test("validatePlaceholders checks target-only variations against concrete source string unit")
+    func validatePlaceholdersChecksTargetOnlyVariationsAgainstConcreteSourceStringUnit() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithConcreteSourceTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 2)
+        #expect(report.summary.invalidTranslations == 2)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch", "placeholder_mismatch"])
+        #expect(report.issues.map(\.path).contains("strings[\"item.count\"].localizations.es.variations.plural.one"))
+        #expect(report.issues.map(\.path).contains("strings[\"item.count\"].localizations.es.variations.plural.other"))
+        #expect(report.validations.allSatisfy { $0.sourceValue == "%lld items" })
+    }
+
+    @Test("validatePlaceholders accepts target-only variations that preserve concrete source string unit placeholders")
+    func validatePlaceholdersAcceptsTargetOnlyVariationsThatPreserveConcreteSourceStringUnitPlaceholders() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithValidConcreteSourceTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 2)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+        #expect(report.validations.allSatisfy { $0.sourceValue == "%lld items" })
+    }
+
+    @Test("validatePlaceholders treats empty source variations as target-only variations")
+    func validatePlaceholdersTreatsEmptySourceVariationsAsTargetOnlyVariations() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithEmptySourceVariationTargetOnlyVariation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 2)
+        #expect(report.summary.invalidTranslations == 2)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch", "placeholder_mismatch"])
+        #expect(report.issues.map(\.path).contains("strings[\"item.count\"].localizations.es.variations.plural.one"))
+        #expect(report.issues.map(\.path).contains("strings[\"item.count\"].localizations.es.variations.plural.other"))
+        #expect(report.validations.allSatisfy { $0.sourceValue == "%lld items" })
+    }
+
     @Test("validatePlaceholders prefers explicit source localization over key text")
     func validatePlaceholdersPrefersExplicitSourceLocalizationOverKeyText() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithExplicitSourceValueDifferentFromKey)
@@ -648,6 +697,118 @@ struct CatalogValidationTests {
                     "stringUnit": {
                       "state": "translated",
                       "value": "%lld elementos"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithConcreteSourceTargetOnlyVariation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "item.count": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld items"
+              }
+            },
+            "es": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elemento"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elementos"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithValidConcreteSourceTargetOnlyVariation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "item.count": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld items"
+              }
+            },
+            "es": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld elemento"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld elementos"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithEmptySourceVariationTargetOnlyVariation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "item.count": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld items"
+              },
+              "variations": {}
+            },
+            "es": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elemento"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "elementos"
                     }
                   }
                 }
