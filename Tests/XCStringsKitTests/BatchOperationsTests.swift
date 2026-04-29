@@ -134,7 +134,8 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == 3)
         #expect(result.failedCount == 0)
-        #expect(Set(result.succeeded) == Set(["Hello", "Goodbye", "Thanks"]))
+        #expect(Set(result.entryResults.map(\.key)) == Set(["Hello", "Goodbye", "Thanks"]))
+        #expect(result.entryResults.allSatisfy { $0.status == .succeeded })
 
         // Verify data was written
         let keys = try await parser.listKeys()
@@ -167,8 +168,9 @@ struct BatchOperationsTests {
         #expect(result.successCount == 1)
         #expect(result.failedCount == 1)
         #expect(result.placeholderValidations.filter(\.checked).count == 1)
-        #expect(result.failed[0].key == "sample.action.preview")
-        #expect(result.failed[0].error.contains("Unsafe format string"))
+        let failure = try #require(result.entryResults.first { $0.status == .failed })
+        #expect(failure.key == "sample.action.preview")
+        #expect(failure.error?.contains("Unsafe format string") == true)
     }
 
     @Test("addTranslationsBatch handles duplicate and overwrite scenarios", arguments: BatchAddTestCase.allCases)
@@ -186,8 +188,59 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == testCase.expectedSuccess)
         #expect(result.failedCount == testCase.expectedFailed)
-        #expect(Set(result.succeeded) == Set(testCase.expectedSucceeded))
-        #expect(Set(result.failed.map(\.key)) == Set(testCase.expectedFailedKeys))
+        #expect(Set(result.entryResults.filter { $0.status == .succeeded }.map(\.key)) == Set(testCase.expectedSucceeded))
+        #expect(Set(result.entryResults.filter { $0.status == .failed }.map(\.key)) == Set(testCase.expectedFailedKeys))
+    }
+
+    @Test("addTranslationsBatch preserves duplicate mixed outcome input indexes")
+    func addTranslationsBatchDuplicateMixedOutcomesPreserveInputIndexes() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.empty.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "NewKey", translations: ["en": "First value"]),
+            BatchTranslationEntry(key: "NewKey", translations: ["en": "Second value"]),
+        ]
+
+        let result = try await parser.addTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.failedCount == 1)
+        #expect(result.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(result.entryResults.map(\.key) == ["NewKey", "NewKey"])
+        #expect(result.entryResults.map(\.status) == [.succeeded, .failed])
+        #expect(result.entryResults.filter { $0.status == .failed }.map(\.inputIndex) == [1])
+    }
+
+    @Test("addTranslationsBatch captures per-entry state snapshots for duplicate overwrites")
+    func addTranslationsBatchDuplicateOverwriteStateSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.empty.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "NewKey", translations: ["en": "First value"]),
+            BatchTranslationEntry(key: "NewKey", translations: ["en": "Second value"]),
+        ]
+
+        let result = try await parser.addTranslationsBatch(entries: entries, allowOverwrite: true)
+
+        #expect(result.successCount == 2)
+        #expect(result.failedCount == 0)
+        #expect(result.entryResults.map(\.inputIndex) == [0, 1])
+
+        let firstLanguageResult = try #require(result.entryResults[0].languageResults.first)
+        #expect(firstLanguageResult.language == "en")
+        #expect(firstLanguageResult.action == .inserted)
+        #expect(firstLanguageResult.previousState == nil)
+        #expect(firstLanguageResult.finalState?.value == "First value")
+
+        let secondLanguageResult = try #require(result.entryResults[1].languageResults.first)
+        #expect(secondLanguageResult.language == "en")
+        #expect(secondLanguageResult.action == .updated)
+        #expect(secondLanguageResult.previousState?.value == "First value")
+        #expect(secondLanguageResult.finalState?.value == "Second value")
     }
 
     // MARK: - Batch Update Translations Tests
@@ -229,7 +282,8 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == 0)
         #expect(result.failedCount == 1)
-        #expect(result.failed[0].key == testCase.expectedFailedKey)
+        let failure = try #require(result.entryResults.first { $0.status == .failed })
+        #expect(failure.key == testCase.expectedFailedKey)
     }
 
     @Test("updateTranslationsBatch with mixed success and failure")
@@ -247,8 +301,56 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == 1)
         #expect(result.failedCount == 1)
-        #expect(result.succeeded.contains("Hello"))
-        #expect(result.failed[0].key == "NonExistent")
+        #expect(result.entryResults.contains { $0.key == "Hello" && $0.status == .succeeded })
+        #expect(result.entryResults.contains { $0.key == "NonExistent" && $0.status == .failed })
+    }
+
+    @Test("updateTranslationsBatch preserves duplicate failed input indexes")
+    func updateTranslationsBatchDuplicateFailuresPreserveInputIndexes() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.singleKeySingleLang.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "MissingKey", translations: ["ja": "Value A"]),
+            BatchTranslationEntry(key: "MissingKey", translations: ["fr": "Value B"]),
+        ]
+
+        let result = try await parser.updateTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 0)
+        #expect(result.failedCount == 2)
+        #expect(result.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(result.entryResults.map(\.key) == ["MissingKey", "MissingKey"])
+        #expect(result.entryResults.map(\.status) == [.failed, .failed])
+    }
+
+    @Test("updateTranslationsBatch captures per-entry state snapshots for duplicate updates")
+    func updateTranslationsBatchDuplicateUpdateStateSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.singleKeySingleLang.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(key: "Hello", translations: ["en": "First update"]),
+            BatchTranslationEntry(key: "Hello", translations: ["en": "Second update"]),
+        ]
+
+        let result = try await parser.updateTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 2)
+        #expect(result.failedCount == 0)
+        #expect(result.entryResults.map(\.inputIndex) == [0, 1])
+
+        let firstLanguageResult = try #require(result.entryResults[0].languageResults.first)
+        #expect(firstLanguageResult.action == .updated)
+        #expect(firstLanguageResult.previousState?.value == "Hello")
+        #expect(firstLanguageResult.finalState?.value == "First update")
+
+        let secondLanguageResult = try #require(result.entryResults[1].languageResults.first)
+        #expect(secondLanguageResult.action == .updated)
+        #expect(secondLanguageResult.previousState?.value == "First update")
+        #expect(secondLanguageResult.finalState?.value == "Second update")
     }
 
     // MARK: - Edge Cases
@@ -311,8 +413,8 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == 1)
         #expect(result.failedCount == 1)
-        #expect(result.succeeded == ["Hello"])
-        #expect(result.failed[0].key == "BrandName")
+        #expect(result.entryResults.contains { $0.key == "Hello" && $0.status == .succeeded })
+        #expect(result.entryResults.contains { $0.key == "BrandName" && $0.status == .failed })
 
         let brandKey = try await parser.getKey("BrandName")
         #expect(brandKey.shouldTranslate == false)
@@ -334,8 +436,8 @@ struct BatchOperationsTests {
 
         #expect(result.successCount == 1)
         #expect(result.failedCount == 1)
-        #expect(result.succeeded == ["Hello"])
-        #expect(result.failed[0].key == "BrandName")
+        #expect(result.entryResults.contains { $0.key == "Hello" && $0.status == .succeeded })
+        #expect(result.entryResults.contains { $0.key == "BrandName" && $0.status == .failed })
 
         let brandKey = try await parser.getKey("BrandName")
         #expect(brandKey.shouldTranslate == false)

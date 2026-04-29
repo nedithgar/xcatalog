@@ -845,34 +845,31 @@ package struct BatchWriteResult: Codable, Sendable {
     package let success: Bool
     package let successCount: Int
     package let failedCount: Int
-    package let succeeded: [String]
-    package let failed: [BatchWriteError]
+    package let entryResults: [BatchWriteEntryResult]
     package let placeholderValidations: [PlaceholderValidationResult]
 
     package init(
-        succeeded: [String],
-        failed: [BatchWriteError],
+        entryResults: [BatchWriteEntryResult],
         placeholderValidations: [PlaceholderValidationResult] = []
     ) {
-        self.success = failed.isEmpty
-        self.successCount = succeeded.count
-        self.failedCount = failed.count
-        self.succeeded = succeeded
-        self.failed = failed
+        self.success = entryResults.allSatisfy { $0.status == .succeeded }
+        self.successCount = entryResults.filter { $0.status == .succeeded }.count
+        self.failedCount = entryResults.filter { $0.status == .failed }.count
+        self.entryResults = entryResults
         self.placeholderValidations = placeholderValidations
     }
 
     private enum CodingKeys: String, CodingKey {
-        case success, successCount, failedCount, succeeded, failed, placeholderValidations
+        case success, successCount, failedCount, entryResults, placeholderValidations
     }
 
     package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.success = try container.decode(Bool.self, forKey: .success)
-        self.successCount = try container.decode(Int.self, forKey: .successCount)
-        self.failedCount = try container.decode(Int.self, forKey: .failedCount)
-        self.succeeded = try container.decodeIfPresent([String].self, forKey: .succeeded) ?? []
-        self.failed = try container.decodeIfPresent([BatchWriteError].self, forKey: .failed) ?? []
+        self.entryResults = try container.decodeIfPresent([BatchWriteEntryResult].self, forKey: .entryResults)
+            ?? []
+        self.success = entryResults.allSatisfy { $0.status == .succeeded }
+        self.successCount = entryResults.filter { $0.status == .succeeded }.count
+        self.failedCount = entryResults.filter { $0.status == .failed }.count
         self.placeholderValidations = try container.decodeIfPresent([PlaceholderValidationResult].self, forKey: .placeholderValidations) ?? []
     }
 
@@ -881,13 +878,7 @@ package struct BatchWriteResult: Codable, Sendable {
         try container.encode(success, forKey: .success)
         try container.encode(successCount, forKey: .successCount)
         try container.encode(failedCount, forKey: .failedCount)
-        // Only include non-empty arrays
-        if !succeeded.isEmpty {
-            try container.encode(succeeded, forKey: .succeeded)
-        }
-        if !failed.isEmpty {
-            try container.encode(failed, forKey: .failed)
-        }
+        try container.encode(entryResults, forKey: .entryResults)
         let checkedValidations = placeholderValidations.filter(\.checked)
         if !checkedValidations.isEmpty {
             try container.encode(checkedValidations, forKey: .placeholderValidations)
@@ -895,14 +886,98 @@ package struct BatchWriteResult: Codable, Sendable {
     }
 }
 
-/// Error info for batch write operations
-package struct BatchWriteError: Codable, Sendable {
+/// Per-input-entry batch write result. This preserves duplicate keys and input order.
+package struct BatchWriteEntryResult: Codable, Sendable {
+    package let inputIndex: Int
     package let key: String
-    package let error: String
+    package let status: BatchWriteEntryStatus
+    package let languageResults: [BatchWriteLanguageResult]
+    package let error: String?
 
-    package init(key: String, error: String) {
+    package init(
+        inputIndex: Int,
+        key: String,
+        status: BatchWriteEntryStatus,
+        languageResults: [BatchWriteLanguageResult] = [],
+        error: String? = nil
+    ) {
+        self.inputIndex = inputIndex
         self.key = key
+        self.status = status
+        self.languageResults = languageResults
         self.error = error
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case inputIndex, key, status, languageResults, error
+    }
+
+    package init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.inputIndex = try container.decode(Int.self, forKey: .inputIndex)
+        self.key = try container.decode(String.self, forKey: .key)
+        self.status = try container.decode(BatchWriteEntryStatus.self, forKey: .status)
+        self.languageResults = try container.decodeIfPresent([BatchWriteLanguageResult].self, forKey: .languageResults) ?? []
+        self.error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+}
+
+package enum BatchWriteEntryStatus: String, Codable, Sendable {
+    case succeeded
+    case failed
+}
+
+/// Per-language state transition produced while processing a single batch input entry.
+package struct BatchWriteLanguageResult: Codable, Sendable {
+    package let language: String
+    package let action: BatchWriteTranslationAction
+    package let previousState: BatchWriteTranslationSnapshot?
+    package let finalState: BatchWriteTranslationSnapshot?
+    package let placeholderValidation: PlaceholderValidationResult?
+
+    package init(
+        language: String,
+        action: BatchWriteTranslationAction,
+        previousState: BatchWriteTranslationSnapshot?,
+        finalState: BatchWriteTranslationSnapshot?,
+        placeholderValidation: PlaceholderValidationResult? = nil
+    ) {
+        self.language = language
+        self.action = action
+        self.previousState = previousState
+        self.finalState = finalState
+        self.placeholderValidation = placeholderValidation
+    }
+}
+
+package enum BatchWriteTranslationAction: String, Codable, Sendable {
+    case inserted
+    case updated
+}
+
+/// Snapshot of one key/language localization at the exact point a batch entry handled it.
+package struct BatchWriteTranslationSnapshot: Codable, Sendable {
+    package let key: String
+    package let language: String
+    package let value: String?
+    package let state: String?
+    package let hasVariations: Bool
+    package let hasSubstitutions: Bool
+
+    package init(
+        key: String,
+        language: String,
+        value: String?,
+        state: String?,
+        hasVariations: Bool,
+        hasSubstitutions: Bool
+    ) {
+        self.key = key
+        self.language = language
+        self.value = value
+        self.state = state
+        self.hasVariations = hasVariations
+        self.hasSubstitutions = hasSubstitutions
     }
 }
 

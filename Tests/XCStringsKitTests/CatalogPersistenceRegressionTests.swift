@@ -28,7 +28,8 @@ struct CatalogPersistenceRegressionTests {
 
         #expect(result.successCount == spanishTranslations.count)
         #expect(result.failedCount == 0)
-        #expect(Set(result.succeeded) == Set(spanishTranslations.keys))
+        #expect(Set(result.entryResults.map(\.key)) == Set(spanishTranslations.keys))
+        #expect(result.entryResults.allSatisfy { $0.status == .succeeded })
 
         let updatedFile = try await parser.load()
         #expect(updatedFile.sourceLanguage == originalFile.sourceLanguage)

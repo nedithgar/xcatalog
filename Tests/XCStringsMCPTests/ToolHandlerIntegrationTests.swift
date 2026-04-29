@@ -874,6 +874,126 @@ struct ToolHandlerIntegrationTests {
         #expect(keys.contains("Goodbye"))
     }
 
+    @Test("BatchAddTranslationsHandler preserves duplicate mixed outcome entries")
+    func batchAddTranslationsHandlerDuplicateMixedOutcomes() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchAddTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "entries": .array([
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("First value")
+                    ])
+                ]),
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("Second value")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(!response.success)
+        #expect(response.insertedCount == 1)
+        #expect(response.failedCount == 1)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.key) == ["NewKey", "NewKey"])
+        #expect(response.entries.map(\.action) == [.inserted, .failed])
+        #expect(response.entries[1].diagnostics.first?.contains("Key already exists") == true)
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(batchResult.entryResults.map(\.status) == [.succeeded, .failed])
+    }
+
+    @Test("BatchAddTranslationsHandler reports per-entry state for duplicate overwrites")
+    func batchAddTranslationsHandlerDuplicateOverwriteStateSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchAddTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "overwrite": .bool(true),
+            "entries": .array([
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("First value")
+                    ])
+                ]),
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("Second value")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(response.success)
+        #expect(response.insertedCount == 1)
+        #expect(response.updatedCount == 1)
+        #expect(response.failedCount == 0)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.action) == [.inserted, .updated])
+        #expect(response.entries[0].previousState == nil)
+        #expect(response.entries[0].finalState?.value == "First value")
+        #expect(response.entries[1].previousState?.value == "First value")
+        #expect(response.entries[1].finalState?.value == "Second value")
+
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults[0].languageResults.first?.finalState?.value == "First value")
+        #expect(batchResult.entryResults[1].languageResults.first?.previousState?.value == "First value")
+    }
+
+    @Test("BatchUpdateTranslationsHandler preserves duplicate failed entries")
+    func batchUpdateTranslationsHandlerDuplicateFailures() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchUpdateTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "entries": .array([
+                .object([
+                    "key": .string("MissingKey"),
+                    "translations": .object([
+                        "ja": .string("Value A")
+                    ])
+                ]),
+                .object([
+                    "key": .string("MissingKey"),
+                    "translations": .object([
+                        "fr": .string("Value B")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(!response.success)
+        #expect(response.failedCount == 2)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.key) == ["MissingKey", "MissingKey"])
+        #expect(response.entries.allSatisfy { $0.action == .failed })
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(batchResult.entryResults.map(\.status) == [.failed, .failed])
+    }
+
     @Test("SupplementLocaleHandler returns atomic supplement result")
     func supplementLocaleHandler() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.multipleKeysPartialTranslations)

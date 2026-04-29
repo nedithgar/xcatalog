@@ -29,14 +29,10 @@ struct BatchAddTranslationsHandler: ToolHandler {
         let overwrite = context.arguments.bool("overwrite", default: false)
 
         let parser = XCStringsParser(path: file)
-        let previousStates = await MCPWriteResponseBuilder.snapshots(parser: parser, entries: entries)
         let result = try await parser.addTranslationsBatch(entries: entries, allowOverwrite: overwrite)
-        let responseEntries = await batchResponseEntries(
-            parser: parser,
+        let responseEntries = batchResponseEntries(
             entries: entries,
-            result: result,
-            previousStates: previousStates,
-            defaultAction: .inserted
+            result: result
         )
         let response = MCPWriteResponse(
             file: file,
@@ -62,14 +58,10 @@ struct BatchUpdateTranslationsHandler: ToolHandler {
         let entries = try context.arguments.requireBatchEntries("entries")
 
         let parser = XCStringsParser(path: file)
-        let previousStates = await MCPWriteResponseBuilder.snapshots(parser: parser, entries: entries)
         let result = try await parser.updateTranslationsBatch(entries: entries)
-        let responseEntries = await batchResponseEntries(
-            parser: parser,
+        let responseEntries = batchResponseEntries(
             entries: entries,
-            result: result,
-            previousStates: previousStates,
-            defaultAction: .updated
+            result: result
         )
         let response = MCPWriteResponse(
             file: file,
@@ -121,52 +113,62 @@ struct SupplementLocaleHandler: ToolHandler {
 }
 
 private func batchResponseEntries(
-    parser: XCStringsParser,
     entries: [BatchTranslationEntry],
-    result: BatchWriteResult,
-    previousStates: [String: MCPTranslationSnapshot],
-    defaultAction: MCPWriteAction
-) async -> [MCPWriteEntryResult] {
-    let succeeded = Set(result.succeeded)
-    let failures = Dictionary(uniqueKeysWithValues: result.failed.map { ($0.key, $0.error) })
+    result: BatchWriteResult
+) -> [MCPWriteEntryResult] {
     var responseEntries: [MCPWriteEntryResult] = []
 
-    for entry in entries.sorted(by: { $0.key < $1.key }) {
-        if let failure = failures[entry.key] {
+    for entryResult in result.entryResults.sorted(by: { $0.inputIndex < $1.inputIndex }) {
+        guard entries.indices.contains(entryResult.inputIndex) else {
             responseEntries.append(
                 MCPWriteEntryResult(
-                    key: entry.key,
+                    inputIndex: entryResult.inputIndex,
+                    key: entryResult.key,
                     action: .failed,
-                    diagnostics: [failure]
+                    diagnostics: ["Batch result referenced an input index that does not exist."]
                 )
             )
             continue
         }
 
-        guard succeeded.contains(entry.key) else {
+        let entry = entries[entryResult.inputIndex]
+        if entryResult.status == .failed {
+            responseEntries.append(
+                MCPWriteEntryResult(
+                    inputIndex: entryResult.inputIndex,
+                    key: entry.key,
+                    action: .failed,
+                    diagnostics: [entryResult.error ?? "Batch entry failed."]
+                )
+            )
             continue
         }
 
-        for language in entry.translations.keys.sorted() {
-            let snapshotKey = MCPWriteResponseBuilder.snapshotKey(entry.key, language)
-            let previousState = previousStates[snapshotKey]
-            let action: MCPWriteAction = defaultAction == .inserted
-                ? (previousState == nil ? .inserted : .updated)
-                : defaultAction
+        for languageResult in entryResult.languageResults.sorted(by: { $0.language < $1.language }) {
             responseEntries.append(
                 MCPWriteEntryResult(
+                    inputIndex: entryResult.inputIndex,
                     key: entry.key,
-                    language: language,
-                    action: action,
-                    previousState: previousState,
-                    finalState: await MCPWriteResponseBuilder.snapshot(parser: parser, key: entry.key, language: language),
-                    placeholderValidation: result.placeholderValidations.first {
-                        $0.key == entry.key && $0.language == language
-                    }
+                    language: languageResult.language,
+                    action: MCPWriteAction(languageResult.action),
+                    previousState: languageResult.previousState.map(MCPTranslationSnapshot.init(snapshot:)),
+                    finalState: languageResult.finalState.map(MCPTranslationSnapshot.init(snapshot:)),
+                    placeholderValidation: languageResult.placeholderValidation
                 )
             )
         }
     }
 
     return responseEntries
+}
+
+private extension MCPWriteAction {
+    init(_ action: BatchWriteTranslationAction) {
+        switch action {
+        case .inserted:
+            self = .inserted
+        case .updated:
+            self = .updated
+        }
+    }
 }

@@ -38,9 +38,19 @@ struct MCPTranslationSnapshot: Codable, Sendable {
         self.hasVariations = info.hasVariations
         self.hasSubstitutions = info.hasSubstitutions
     }
+
+    init(snapshot: BatchWriteTranslationSnapshot) {
+        self.key = snapshot.key
+        self.language = snapshot.language
+        self.value = snapshot.value
+        self.state = snapshot.state
+        self.hasVariations = snapshot.hasVariations
+        self.hasSubstitutions = snapshot.hasSubstitutions
+    }
 }
 
 struct MCPWriteEntryResult: Codable, Sendable {
+    let inputIndex: Int?
     let key: String
     let language: String?
     let action: MCPWriteAction
@@ -52,6 +62,7 @@ struct MCPWriteEntryResult: Codable, Sendable {
     let placeholderValidation: PlaceholderValidationResult?
 
     init(
+        inputIndex: Int? = nil,
         key: String,
         language: String? = nil,
         action: MCPWriteAction,
@@ -62,6 +73,7 @@ struct MCPWriteEntryResult: Codable, Sendable {
         diagnostics: [String] = [],
         placeholderValidation: PlaceholderValidationResult? = nil
     ) {
+        self.inputIndex = inputIndex
         self.key = key
         self.language = language
         self.action = action

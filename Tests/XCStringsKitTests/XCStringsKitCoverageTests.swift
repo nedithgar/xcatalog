@@ -119,17 +119,51 @@ struct XCStringsKitCoverageTests {
         #expect(compact.notApplicableLanguages == ["ja"])
     }
 
-    @Test("BatchWriteResult encodes failed entries only when present")
+    @Test("BatchWriteResult encodes ordered entry results")
     func batchWriteResultEncoding() throws {
-        let failed = BatchWriteResult(
-            succeeded: [],
-            failed: [BatchWriteError(key: "Hello", error: "write failed")]
+        let result = BatchWriteResult(
+            entryResults: [
+                BatchWriteEntryResult(
+                    inputIndex: 0,
+                    key: "Hello",
+                    status: .failed,
+                    languageResults: [
+                        BatchWriteLanguageResult(
+                            language: "en",
+                            action: .updated,
+                            previousState: BatchWriteTranslationSnapshot(
+                                key: "Hello",
+                                language: "en",
+                                value: "Hello",
+                                state: "translated",
+                                hasVariations: false,
+                                hasSubstitutions: false
+                            ),
+                            finalState: BatchWriteTranslationSnapshot(
+                                key: "Hello",
+                                language: "en",
+                                value: "Hi",
+                                state: "translated",
+                                hasVariations: false,
+                                hasSubstitutions: false
+                            )
+                        )
+                    ],
+                    error: "write failed"
+                )
+            ]
         )
-        let encoded = try encodeJSON(failed)
+        let encoded = try encodeJSON(result)
 
-        #expect(encoded.contains("\"failed\""))
+        #expect(encoded.contains("\"entryResults\""))
+        #expect(encoded.contains("\"inputIndex\""))
+        #expect(encoded.contains("\"languageResults\""))
+        #expect(encoded.contains("\"previousState\""))
+        #expect(encoded.contains("\"finalState\""))
+        #expect(encoded.contains("\"status\""))
         #expect(encoded.contains("\"write failed\""))
         #expect(!encoded.contains("\"succeeded\""))
+        #expect(!encoded.contains("\"failed\":["))
     }
 
     @Test("StringEntry translation semantics treat non-translatable entries as already covered")

@@ -209,31 +209,74 @@ enum XCStringsWriter {
         allowOverwrite: Bool = false
     ) -> (file: XCStringsFile, result: BatchWriteResult) {
         var result = file
-        var succeeded: [String] = []
-        var failed: [BatchWriteError] = []
+        var entryResults: [BatchWriteEntryResult] = []
         var placeholderValidations: [PlaceholderValidationResult] = []
 
-        for entry in entries {
+        for (inputIndex, entry) in entries.enumerated() {
             do {
                 let validations = try validateTranslationWrite(
                     for: entry.key,
                     translations: entry.translations,
                     in: result
                 )
-                result = try addTranslations(
-                    to: result,
-                    key: entry.key,
-                    translations: entry.translations,
-                    allowOverwrite: allowOverwrite
-                )
+                var candidate = result
+                if candidate.strings[entry.key] == nil {
+                    candidate.strings[entry.key] = StringEntry(localizations: [:])
+                }
+
+                if candidate.strings[entry.key]?.localizations == nil {
+                    candidate.strings[entry.key]?.localizations = [:]
+                }
+
+                var languageResults: [BatchWriteLanguageResult] = []
+                for (language, value) in entry.translations {
+                    let previousState = translationSnapshot(in: candidate, key: entry.key, language: language)
+                    if !allowOverwrite, previousState != nil {
+                        throw XCStringsError.keyAlreadyExists(key: "\(entry.key):\(language)")
+                    }
+
+                    candidate.strings[entry.key]?.localizations?[language] = Localization(
+                        stringUnit: StringUnit(state: "translated", value: value)
+                    )
+                    let finalState = translationSnapshot(in: candidate, key: entry.key, language: language)
+                    languageResults.append(
+                        BatchWriteLanguageResult(
+                            language: language,
+                            action: previousState == nil ? .inserted : .updated,
+                            previousState: previousState,
+                            finalState: finalState,
+                            placeholderValidation: validations.first {
+                                $0.key == entry.key && $0.language == language
+                            }
+                        )
+                    )
+                }
+
+                result = candidate
                 placeholderValidations.append(contentsOf: validations)
-                succeeded.append(entry.key)
+                entryResults.append(
+                    BatchWriteEntryResult(
+                        inputIndex: inputIndex,
+                        key: entry.key,
+                        status: .succeeded,
+                        languageResults: languageResults
+                    )
+                )
             } catch {
-                failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
+                let message = error.localizedDescription
+                entryResults.append(
+                    BatchWriteEntryResult(inputIndex: inputIndex, key: entry.key, status: .failed, error: message)
+                )
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed, placeholderValidations: placeholderValidations))
+        return (
+            result,
+            BatchWriteResult(
+                entryResults: entryResults,
+                placeholderValidations: placeholderValidations
+            )
+        )
     }
 
     /// Update translations for multiple keys at once
@@ -242,30 +285,68 @@ enum XCStringsWriter {
         entries: [BatchTranslationEntry]
     ) -> (file: XCStringsFile, result: BatchWriteResult) {
         var result = file
-        var succeeded: [String] = []
-        var failed: [BatchWriteError] = []
+        var entryResults: [BatchWriteEntryResult] = []
         var placeholderValidations: [PlaceholderValidationResult] = []
 
-        for entry in entries {
+        for (inputIndex, entry) in entries.enumerated() {
             do {
                 let validations = try validateTranslationWrite(
                     for: entry.key,
                     translations: entry.translations,
                     in: result
                 )
-                result = try updateTranslations(
-                    in: result,
-                    key: entry.key,
-                    translations: entry.translations
-                )
+                var candidate = result
+                guard candidate.strings[entry.key] != nil else {
+                    throw XCStringsError.keyNotFound(key: entry.key)
+                }
+
+                var languageResults: [BatchWriteLanguageResult] = []
+                for (language, value) in entry.translations {
+                    guard let previousState = translationSnapshot(in: candidate, key: entry.key, language: language) else {
+                        throw XCStringsError.languageNotFound(language: language, key: entry.key)
+                    }
+
+                    candidate.strings[entry.key]?.localizations?[language] = Localization(
+                        stringUnit: StringUnit(state: "translated", value: value)
+                    )
+                    languageResults.append(
+                        BatchWriteLanguageResult(
+                            language: language,
+                            action: .updated,
+                            previousState: previousState,
+                            finalState: translationSnapshot(in: candidate, key: entry.key, language: language),
+                            placeholderValidation: validations.first {
+                                $0.key == entry.key && $0.language == language
+                            }
+                        )
+                    )
+                }
+
+                result = candidate
                 placeholderValidations.append(contentsOf: validations)
-                succeeded.append(entry.key)
+                entryResults.append(
+                    BatchWriteEntryResult(
+                        inputIndex: inputIndex,
+                        key: entry.key,
+                        status: .succeeded,
+                        languageResults: languageResults
+                    )
+                )
             } catch {
-                failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
+                let message = error.localizedDescription
+                entryResults.append(
+                    BatchWriteEntryResult(inputIndex: inputIndex, key: entry.key, status: .failed, error: message)
+                )
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed, placeholderValidations: placeholderValidations))
+        return (
+            result,
+            BatchWriteResult(
+                entryResults: entryResults,
+                placeholderValidations: placeholderValidations
+            )
+        )
     }
 
     static func validateTranslationWrite(
@@ -319,5 +400,24 @@ enum XCStringsWriter {
                 diagnostics: validation.diagnostics
             )
         }
+    }
+
+    private static func translationSnapshot(
+        in file: XCStringsFile,
+        key: String,
+        language: String
+    ) -> BatchWriteTranslationSnapshot? {
+        guard let localization = file.strings[key]?.localizations?[language] else {
+            return nil
+        }
+
+        return BatchWriteTranslationSnapshot(
+            key: key,
+            language: language,
+            value: localization.stringUnit?.value,
+            state: localization.stringUnit?.state,
+            hasVariations: localization.variations != nil,
+            hasSubstitutions: localization.substitutions != nil
+        )
     }
 }
