@@ -67,14 +67,22 @@ struct ConcurrentAccessTests {
         let path = try TestHelper.createTempFile(content: TestFixtures.empty)
         defer { TestHelper.removeTempFile(at: path) }
 
+        let lockEntered = AsyncStream<Void>.makeStream()
+
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+                    lockEntered.continuation.yield(())
+                    lockEntered.continuation.finish()
                     Thread.sleep(forTimeInterval: 0.2)
                 }
             }
 
-            try await Task.sleep(nanoseconds: 20_000_000)
+            guard await Self.waitForSignal(lockEntered.stream) else {
+                Issue.record("Timed out waiting for exclusive access to start")
+                try await group.waitForAll()
+                return
+            }
 
             do {
                 try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path, wait: false) {}
@@ -89,6 +97,26 @@ struct ConcurrentAccessTests {
             }
 
             try await group.waitForAll()
+        }
+    }
+
+    private static func waitForSignal(
+        _ stream: AsyncStream<Void>,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                var iterator = stream.makeAsyncIterator()
+                return await iterator.next() != nil
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return false
+            }
+
+            let signaled = await group.next() ?? false
+            group.cancelAll()
+            return signaled
         }
     }
 }
