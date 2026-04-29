@@ -400,6 +400,8 @@ package enum XCStringsCatalogValidator {
     ) -> (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue]) {
         var validations: [PlaceholderValidationResult] = []
         var issues: [CatalogValidationIssue] = []
+        let sourceContext = RichArgumentContext(substitutions: sourceLocalization.substitutions)
+        let targetContext = RichArgumentContext(substitutions: targetLocalization.substitutions)
 
         if let sourceValue = sourceLocalization.stringUnit?.value,
            let targetValue = targetLocalization.stringUnit?.value {
@@ -407,7 +409,9 @@ package enum XCStringsCatalogValidator {
                 key: key,
                 language: language,
                 sourceValue: sourceValue,
-                targetValue: targetValue
+                targetValue: targetValue,
+                sourceContext: sourceContext,
+                targetContext: targetContext
             )
             if validation.checked {
                 validations.append(validation)
@@ -420,6 +424,8 @@ package enum XCStringsCatalogValidator {
             language: language,
             sourceVariations: sourceLocalization.variations,
             targetVariations: targetLocalization.variations,
+            sourceContext: sourceContext,
+            targetContext: targetContext,
             basePath: "strings[\(quotedKey(key))].localizations.\(language).variations"
         )
         validations.append(contentsOf: variationResult.validations)
@@ -444,13 +450,16 @@ package enum XCStringsCatalogValidator {
     ) -> (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue]) {
         var validations: [PlaceholderValidationResult] = []
         var issues: [CatalogValidationIssue] = []
+        let keySourceContext = RichArgumentContext(substitutions: targetLocalization.substitutions)
 
         if let targetValue = targetLocalization.stringUnit?.value {
             let validation = validatePlaceholderSet(
                 key: key,
                 language: language,
                 sourceValue: key,
-                targetValue: targetValue
+                targetValue: targetValue,
+                sourceContext: keySourceContext,
+                targetContext: keySourceContext
             )
             if validation.checked {
                 validations.append(validation)
@@ -470,7 +479,9 @@ package enum XCStringsCatalogValidator {
                 key: key,
                 language: language,
                 sourceValue: key,
-                targetValue: targetValue
+                targetValue: targetValue,
+                sourceContext: keySourceContext,
+                targetContext: keySourceContext
             )
             if validation.checked {
                 validations.append(validation)
@@ -488,7 +499,9 @@ package enum XCStringsCatalogValidator {
         key: String,
         language: String,
         sourceValue: String,
-        targetValue: String
+        targetValue: String,
+        sourceContext: RichArgumentContext = .empty,
+        targetContext: RichArgumentContext = .empty
     ) -> PlaceholderValidationResult {
         let sourcePlaceholders = FormatStringSafety.placeholders(in: sourceValue)
         let targetPlaceholders = FormatStringSafety.placeholders(in: targetValue)
@@ -511,16 +524,23 @@ package enum XCStringsCatalogValidator {
             targetValue: targetValue,
             sourcePlaceholders: sourcePlaceholders,
             targetPlaceholders: targetPlaceholders,
-            diagnostics: compareRichPlaceholders(source: sourcePlaceholders, target: targetPlaceholders)
+            diagnostics: compareRichPlaceholders(
+                source: sourcePlaceholders,
+                target: targetPlaceholders,
+                sourceContext: sourceContext,
+                targetContext: targetContext
+            )
         )
     }
 
     private static func compareRichPlaceholders(
         source: [FormatPlaceholder],
-        target: [FormatPlaceholder]
+        target: [FormatPlaceholder],
+        sourceContext: RichArgumentContext,
+        targetContext: RichArgumentContext
     ) -> [String] {
-        let sourceCounts = placeholderCounts(source)
-        let targetCounts = placeholderCounts(target)
+        let sourceCounts = placeholderCounts(source.filter { $0.kind != .printf })
+        let targetCounts = placeholderCounts(target.filter { $0.kind != .printf })
         var diagnostics: [String] = []
 
         for identity in sourceCounts.keys.sorted() where targetCounts[identity] == nil {
@@ -538,7 +558,242 @@ package enum XCStringsCatalogValidator {
             diagnostics.append("Placeholder \(identity) count changed from \(sourceCount) to \(targetCount).")
         }
 
+        guard diagnostics.isEmpty else {
+            diagnostics.append(contentsOf: FormatStringSafety.validatePrintfPlaceholders(
+                sourcePlaceholders: source,
+                targetPlaceholders: target
+            ))
+            return diagnostics
+        }
+
+        diagnostics.append(contentsOf: compareRichArgumentOrdering(
+            source: source,
+            target: target,
+            sourceContext: sourceContext,
+            targetContext: targetContext
+        ))
+
         return diagnostics
+    }
+
+    private static func compareRichArgumentOrdering(
+        source: [FormatPlaceholder],
+        target: [FormatPlaceholder],
+        sourceContext: RichArgumentContext,
+        targetContext: RichArgumentContext
+    ) -> [String] {
+        let sourceArguments = runtimeArguments(from: source, context: sourceContext)
+        let targetArguments = runtimeArguments(from: target, context: targetContext)
+        guard !sourceArguments.isEmpty || !targetArguments.isEmpty else {
+            return []
+        }
+
+        let sourcePrintf = sourceArguments.filter { $0.kind == .printf }
+        let targetPrintf = targetArguments.filter { $0.kind == .printf }
+        let sourceHasPositionalPrintf = sourcePrintf.contains { $0.explicitPosition != nil }
+        let sourceHasNonPositionalPrintf = sourcePrintf.contains { $0.explicitPosition == nil }
+        let targetHasPositionalPrintf = targetPrintf.contains { $0.explicitPosition != nil }
+        let targetHasNonPositionalPrintf = targetPrintf.contains { $0.explicitPosition == nil }
+
+        if sourceHasPositionalPrintf && sourceHasNonPositionalPrintf {
+            return [mixedRichPositionalDiagnostic(label: "Source", arguments: sourcePrintf)]
+        }
+
+        if targetHasPositionalPrintf && targetHasNonPositionalPrintf {
+            return [mixedRichPositionalDiagnostic(label: "Target", arguments: targetPrintf)]
+        }
+
+        if sourceHasPositionalPrintf && !targetHasPositionalPrintf {
+            return [
+                "Target must preserve positional placeholders from the source rich string: expected \(describeRuntime(sourceArguments)), found \(describeRuntime(targetArguments))."
+            ]
+        }
+
+        if !sourceHasPositionalPrintf && !targetHasPositionalPrintf {
+            return compareRichNonPositionalSequence(source: sourceArguments, target: targetArguments)
+        }
+
+        return compareRichPositions(
+            source: assignEffectivePositions(sourceArguments),
+            target: assignEffectivePositions(targetArguments)
+        )
+    }
+
+    private static func runtimeArguments(
+        from placeholders: [FormatPlaceholder],
+        context: RichArgumentContext
+    ) -> [RuntimeFormatArgument] {
+        placeholders.map { placeholder in
+            switch placeholder.kind {
+            case .printf:
+                return RuntimeFormatArgument(
+                    kind: .printf,
+                    raw: placeholder.raw,
+                    explicitPosition: placeholder.position,
+                    name: placeholder.name,
+                    specifier: placeholder.specifier
+                )
+            case .stringsdictSubstitution:
+                let richArgument = placeholder.name.flatMap { context.substitutions[$0] }
+                return RuntimeFormatArgument(
+                    kind: .stringsdictSubstitution,
+                    raw: placeholder.raw,
+                    explicitPosition: richArgument?.position,
+                    name: placeholder.name,
+                    specifier: richArgument?.specifier ?? placeholder.specifier
+                )
+            case .stringsdictArgument:
+                return RuntimeFormatArgument(
+                    kind: .stringsdictArgument,
+                    raw: placeholder.raw,
+                    explicitPosition: context.argument?.position,
+                    name: placeholder.name,
+                    specifier: context.argument?.specifier ?? placeholder.specifier
+                )
+            }
+        }
+    }
+
+    private static func compareRichNonPositionalSequence(
+        source: [RuntimeFormatArgument],
+        target: [RuntimeFormatArgument]
+    ) -> [String] {
+        guard source.map(\.sequenceIdentity) != target.map(\.sequenceIdentity) else {
+            return []
+        }
+
+        return [
+            "Target must keep non-positional rich and printf placeholders in source argument order. Expected \(describeRuntime(source)); found \(describeRuntime(target))."
+        ]
+    }
+
+    private static func assignEffectivePositions(
+        _ arguments: [RuntimeFormatArgument]
+    ) -> [PositionedRuntimeFormatArgument] {
+        let fixedPositions = Set(arguments.compactMap(\.explicitPosition))
+        var nextPosition = 1
+
+        return arguments.map { argument in
+            if let explicitPosition = argument.explicitPosition {
+                nextPosition = max(nextPosition, explicitPosition + 1)
+                return PositionedRuntimeFormatArgument(argument: argument, position: explicitPosition)
+            }
+
+            while fixedPositions.contains(nextPosition) {
+                nextPosition += 1
+            }
+            let position = nextPosition
+            nextPosition += 1
+            return PositionedRuntimeFormatArgument(argument: argument, position: position)
+        }
+    }
+
+    private static func compareRichPositions(
+        source: [PositionedRuntimeFormatArgument],
+        target: [PositionedRuntimeFormatArgument]
+    ) -> [String] {
+        var diagnostics: [String] = []
+        let expected = Dictionary(grouping: source, by: \.position).mapValues { arguments in
+            arguments.map(\.argument.positionIdentity)
+        }
+        let actual = Dictionary(grouping: target, by: \.position).mapValues { arguments in
+            arguments.map(\.argument.positionIdentity)
+        }
+
+        let missingPositions = expected.keys.filter { actual[$0]?.isEmpty != false }.sorted()
+        if !missingPositions.isEmpty {
+            diagnostics.append("Missing rich argument positions: \(missingPositions.map { "%\($0)$" }.joined(separator: ", ")).")
+        }
+
+        let extraPositions = actual.keys.filter { expected[$0]?.isEmpty != false }.sorted()
+        if !extraPositions.isEmpty {
+            diagnostics.append("Extra rich argument positions: \(extraPositions.map { "%\($0)$" }.joined(separator: ", ")).")
+        }
+
+        for position in expected.keys.sorted() {
+            guard let expectedIdentities = expected[position],
+                  let actualIdentities = actual[position],
+                  !actualIdentities.isEmpty else {
+                continue
+            }
+
+            let expectedCounts = countsByRuntimeIdentity(expectedIdentities)
+            let actualCounts = countsByRuntimeIdentity(actualIdentities)
+            let missingIdentities = expectedCounts.keys.filter { identity in
+                (actualCounts[identity] ?? 0) < (expectedCounts[identity] ?? 0)
+            }.sorted(by: compareRuntimeIdentities)
+            if !missingIdentities.isEmpty {
+                diagnostics.append(
+                    "Rich argument %\(position)$ is missing expected placeholders: \(describeRuntimeOccurrences(missingIdentities, expected: expectedCounts, actual: actualCounts))."
+                )
+            }
+
+            let extraIdentities = actualCounts.keys.filter { identity in
+                (actualCounts[identity] ?? 0) > (expectedCounts[identity] ?? 0)
+            }.sorted(by: compareRuntimeIdentities)
+            if !extraIdentities.isEmpty {
+                diagnostics.append(
+                    "Rich argument %\(position)$ has extra placeholders: \(describeRuntimeOccurrences(extraIdentities, expected: expectedCounts, actual: actualCounts))."
+                )
+            }
+        }
+
+        return diagnostics
+    }
+
+    private static func mixedRichPositionalDiagnostic(
+        label: String,
+        arguments: [RuntimeFormatArgument]
+    ) -> String {
+        "\(label) mixes positional and non-positional printf placeholders in a rich string: \(describeRuntime(arguments))."
+    }
+
+    private static func describeRuntime(_ arguments: [RuntimeFormatArgument]) -> String {
+        guard !arguments.isEmpty else {
+            return "none"
+        }
+
+        return arguments.map(\.raw).joined(separator: ", ")
+    }
+
+    private static func countsByRuntimeIdentity(
+        _ identities: [RuntimeArgumentIdentity]
+    ) -> [RuntimeArgumentIdentity: Int] {
+        identities.reduce(into: [:]) { result, identity in
+            result[identity, default: 0] += 1
+        }
+    }
+
+    private static func compareRuntimeIdentities(
+        _ lhs: RuntimeArgumentIdentity,
+        _ rhs: RuntimeArgumentIdentity
+    ) -> Bool {
+        if lhs.kind.rawValue != rhs.kind.rawValue {
+            return lhs.kind.rawValue < rhs.kind.rawValue
+        }
+        if lhs.name != rhs.name {
+            return (lhs.name ?? "") < (rhs.name ?? "")
+        }
+        return lhs.specifier < rhs.specifier
+    }
+
+    private static func describeRuntimeOccurrences(
+        _ identities: [RuntimeArgumentIdentity],
+        expected: [RuntimeArgumentIdentity: Int],
+        actual: [RuntimeArgumentIdentity: Int]
+    ) -> String {
+        identities.map { identity in
+            let expectedCount = expected[identity] ?? 0
+            let actualCount = actual[identity] ?? 0
+            let delta = abs(expectedCount - actualCount)
+            let description = describeRuntime(identity)
+            return delta == 1 ? description : "\(description) x\(delta)"
+        }.joined(separator: ", ")
+    }
+
+    private static func describeRuntime(_ identity: RuntimeArgumentIdentity) -> String {
+        let name = identity.name.map { "(\($0))" } ?? ""
+        return "\(identity.kind.rawValue):\(name)\(identity.specifier)"
     }
 
     private static func placeholderCounts(_ placeholders: [FormatPlaceholder]) -> [String: Int] {
@@ -572,6 +827,8 @@ package enum XCStringsCatalogValidator {
         language: String,
         sourceVariations: Variations?,
         targetVariations: Variations?,
+        sourceContext: RichArgumentContext = .empty,
+        targetContext: RichArgumentContext = .empty,
         basePath: String
     ) -> (validations: [PlaceholderValidationResult], issues: [CatalogValidationIssue]) {
         var validations: [PlaceholderValidationResult] = []
@@ -594,7 +851,9 @@ package enum XCStringsCatalogValidator {
                 key: key,
                 language: language,
                 sourceValue: sourceValue,
-                targetValue: targetValue
+                targetValue: targetValue,
+                sourceContext: sourceContext,
+                targetContext: targetContext
             )
             if validation.checked {
                 validations.append(validation)
@@ -671,6 +930,8 @@ package enum XCStringsCatalogValidator {
                 language: language,
                 sourceVariations: source.variations,
                 targetVariations: target.variations,
+                sourceContext: RichArgumentContext(argument: source),
+                targetContext: RichArgumentContext(argument: target),
                 basePath: "strings[\(quotedKey(key))].localizations.\(language).substitutions.\(name).variations"
             )
             validations.append(contentsOf: variationResult.validations)
@@ -978,6 +1239,71 @@ private struct SubstitutionSignature: Equatable {
     let argNum: Int?
     let formatSpecifier: String?
     let variationCategories: [String]
+}
+
+private struct RichArgumentContext {
+    static let empty = RichArgumentContext(substitutions: [:], argument: nil)
+
+    let substitutions: [String: RichArgument]
+    let argument: RichArgument?
+
+    init(
+        substitutions: [String: RichArgument],
+        argument: RichArgument?
+    ) {
+        self.substitutions = substitutions
+        self.argument = argument
+    }
+
+    init(substitutions: OrderedStringDictionary<Substitution>?) {
+        self.substitutions = substitutions?.reduce(into: [:]) { result, entry in
+            result[entry.key] = RichArgument(
+                position: entry.value.argNum,
+                specifier: entry.value.formatSpecifier
+            )
+        } ?? [:]
+        self.argument = nil
+    }
+
+    init(argument substitution: Substitution) {
+        self.substitutions = [:]
+        self.argument = RichArgument(
+            position: substitution.argNum,
+            specifier: substitution.formatSpecifier
+        )
+    }
+}
+
+private struct RichArgument {
+    let position: Int?
+    let specifier: String?
+}
+
+private struct RuntimeFormatArgument {
+    let kind: FormatPlaceholderKind
+    let raw: String
+    let explicitPosition: Int?
+    let name: String?
+    let specifier: String
+
+    var sequenceIdentity: RuntimeArgumentIdentity {
+        RuntimeArgumentIdentity(kind: kind, name: name, specifier: specifier)
+    }
+
+    var positionIdentity: RuntimeArgumentIdentity {
+        RuntimeArgumentIdentity(kind: kind, name: name, specifier: specifier)
+    }
+}
+
+private struct PositionedRuntimeFormatArgument {
+    let argument: RuntimeFormatArgument
+    let position: Int
+}
+
+private struct RuntimeArgumentIdentity: Hashable {
+    let kind: FormatPlaceholderKind
+    let name: String?
+    let specifier: String
 }
 
 private extension FormatPlaceholder {

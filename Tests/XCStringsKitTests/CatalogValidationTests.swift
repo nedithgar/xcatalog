@@ -98,6 +98,34 @@ struct CatalogValidationTests {
         #expect(report.validations.first?.sourceValue == "Items: %lld")
     }
 
+    @Test("validatePlaceholders accepts key-derived rich placeholders when source localization is absent")
+    func validatePlaceholdersAcceptsKeyDerivedRichPlaceholderWhenSourceLocalizationIsAbsent() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSourceRichSubstitution)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("validatePlaceholders accepts key-derived rich placeholders when source localization is an empty shell")
+    func validatePlaceholdersAcceptsKeyDerivedRichPlaceholderWhenSourceLocalizationIsEmptyShell() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithEmptySourceShellRichSubstitution)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
     @Test("validateCatalog uses key text when source localization is an empty shell")
     func validateCatalogUsesKeyTextWhenSourceLocalizationIsEmptyShell() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithEmptySourceShellFormatTranslation)
@@ -184,6 +212,140 @@ struct CatalogValidationTests {
         #expect(!report.success)
         #expect(report.issues.contains { $0.code == "placeholder_mismatch" && $0.key == "items.count" })
         #expect(report.validations.contains { !$0.isValid && $0.sourcePlaceholders.map(\.raw) == ["%arg"] })
+    }
+
+    @Test("validatePlaceholders rejects rich strings with reordered non-positional printf placeholders")
+    func validatePlaceholdersRejectsRichNonPositionalPrintfReorder() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRichNonPositionalPrintfReorder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+        let invalidValidation = try #require(report.validations.first { !$0.isValid })
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(invalidValidation.sourcePlaceholders.map(\.raw) == ["%#@itemCount@", "%@", "%lld"])
+        #expect(invalidValidation.targetPlaceholders.map(\.raw) == ["%#@itemCount@", "%lld", "%@"])
+        #expect(invalidValidation.diagnostics.contains {
+            $0.contains("Target must keep non-positional rich and printf placeholders in source argument order")
+        })
+    }
+
+    @Test("validatePlaceholders accepts rich strings that reorder positional printf placeholders")
+    func validatePlaceholdersAcceptsRichPositionalPrintfReorder() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRichPositionalPrintfReorder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("validatePlaceholders rejects positional printf indexes that collide with rich substitutions")
+    func validatePlaceholdersRejectsRichImplicitSourceToCollidingPositionalTargetPrintfReorder() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRichImplicitSourceToCollidingPositionalTargetPrintfReorder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+        let invalidValidation = try #require(report.validations.first { !$0.isValid })
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.allSatisfy { $0.code == "placeholder_mismatch" })
+        #expect(invalidValidation.diagnostics.contains {
+            $0.contains("Rich argument %1$ has extra placeholders")
+        })
+    }
+
+    @Test("validatePlaceholders accepts rich implicit source reordered with noncolliding positional target")
+    func validatePlaceholdersAcceptsRichImplicitSourceToNoncollidingPositionalTargetPrintfReorder() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRichImplicitSourceToNoncollidingPositionalTargetPrintfReorder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("validatePlaceholders rejects reordered non-positional rich and printf placeholders")
+    func validatePlaceholdersRejectsReorderedNonPositionalRichAndPrintfPlaceholders() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithReorderedNonPositionalRichAndPrintfPlaceholders)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+        let invalidValidation = try #require(report.validations.first { !$0.isValid })
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(invalidValidation.diagnostics.contains {
+            $0.contains("Target must keep non-positional rich and printf placeholders in source argument order")
+        })
+    }
+
+    @Test("validatePlaceholders rejects substitution variation printf indexes that collide with percent arg")
+    func validatePlaceholdersRejectsSubstitutionVariationPrintfIndexCollidingWithPercentArg() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithSubstitutionVariationPrintfCollision)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+        let invalidValidation = try #require(report.validations.first { !$0.isValid })
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.allSatisfy { $0.code == "placeholder_mismatch" })
+        #expect(invalidValidation.diagnostics.contains {
+            $0.contains("Rich argument %1$ has extra placeholders")
+        })
+    }
+
+    @Test("validatePlaceholders accepts substitution variation positional printf after percent arg")
+    func validatePlaceholdersAcceptsSubstitutionVariationPositionalPrintfAfterPercentArg() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithValidSubstitutionVariationPositionalPrintf)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 0)
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("validatePlaceholders reports missing rich printf placeholders once")
+    func validatePlaceholdersReportsMissingRichPrintfPlaceholderOnce() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithDroppedRichPrintfPlaceholder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+        let invalidValidation = try #require(report.validations.first { !$0.isValid })
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 3)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.count == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(invalidValidation.diagnostics.count == 1)
+        #expect(invalidValidation.diagnostics.first?.contains("Target must keep non-positional rich and printf placeholders") == true)
     }
 
     @Test("validatePlaceholders accepts repeated positional dynamic width arguments")
@@ -353,6 +515,89 @@ struct CatalogValidationTests {
     }
     """
 
+    private static let catalogWithMissingSourceRichSubstitution = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%#@itemCount@": {
+          "localizations": {
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "elemento compartido"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos compartidos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithEmptySourceShellRichSubstitution = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%#@itemCount@": {
+          "localizations": {
+            "en": {},
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "elemento compartido"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos compartidos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
     private static let catalogWithMissingSourceTargetOnlyVariation = """
     {
       "sourceLanguage": "en",
@@ -489,6 +734,558 @@ struct CatalogValidationTests {
                         "stringUnit": {
                           "state": "translated",
                           "value": "elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithRichNonPositionalPrintfReorder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %@ %lld"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %lld %@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithRichPositionalPrintfReorder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %2$@ %3$lld"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %3$lld %2$@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithRichImplicitSourceToCollidingPositionalTargetPrintfReorder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %@ %lld"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %2$lld %1$@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithRichImplicitSourceToNoncollidingPositionalTargetPrintfReorder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %@ %lld"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %3$lld %2$@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithReorderedNonPositionalRichAndPrintfPlaceholders = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%@ %#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 2,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 2,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elementos"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithSubstitutionVariationPrintfCollision = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %@"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %@"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %1$@"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %@"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithValidSubstitutionVariationPositionalPrintf = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %@"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg %@"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%2$@ %arg"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%2$@ %arg"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithDroppedRichPrintfPlaceholder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "items.summary": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@ %@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg elemento"
                         }
                       },
                       "other": {

@@ -108,6 +108,16 @@ package enum FormatStringSafety {
         )
     }
 
+    package static func validatePrintfPlaceholders(
+        sourcePlaceholders: [FormatPlaceholder],
+        targetPlaceholders: [FormatPlaceholder]
+    ) -> [String] {
+        validate(
+            sourcePlaceholders: sourcePlaceholders.filter { $0.kind == .printf },
+            targetPlaceholders: targetPlaceholders.filter { $0.kind == .printf }
+        )
+    }
+
     private static func validate(
         sourcePlaceholders: [FormatPlaceholder],
         targetPlaceholders: [FormatPlaceholder]
