@@ -7,8 +7,8 @@ public struct XCStringsMCPServer {
 
     public func run() async throws {
         let server = Server(
-            name: "xcstrings-mcp",
-            version: "0.2.0",
+            name: XCStringsMCPMetadata.serverName,
+            version: XCStringsMCPMetadata.version,
             capabilities: .init(
                 tools: .init(listChanged: false)
             )
@@ -33,9 +33,22 @@ public struct XCStringsMCPServer {
 
     private static var allTools: [Tool] {
         [
+            Tool(
+                name: "xcatalog_health",
+                description: "Report the running xcatalog version and schema metadata. Local filesystem paths are omitted unless explicitly enabled.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "includeSensitivePaths": .object([
+                            "type": .string("boolean"),
+                            "description": .string("Include binaryPath, currentWorkingDirectory, and allowedRoots only when XCATALOG_HEALTH_INCLUDE_SENSITIVE is enabled. Defaults to false."),
+                        ]),
+                    ]),
+                ])
+            ),
             // Read operations
             Tool(
-                name: "xcstrings_list_keys",
+                name: "xcatalog_list_keys",
                 description: "List all keys in the xcstrings file",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -46,7 +59,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_list_languages",
+                name: "xcatalog_list_languages",
                 description: "List all languages in the xcstrings file",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -57,7 +70,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_list_untranslated",
+                name: "xcatalog_list_untranslated",
                 description: "List untranslated keys for a specific language",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -69,7 +82,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_list_stale",
+                name: "xcatalog_list_stale",
                 description: "List keys with stale extraction state (potentially unused keys) in a single file. Note: This only detects keys marked as 'stale' by Xcode. To verify if these keys are truly unused, you should search for their usage in the module or project's source code.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -80,7 +93,60 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_batch_list_stale",
+                name: "xcatalog_preflight_locale",
+                description: "Classify target-locale work before writing translations. Reports missing simple stringUnit keys, format-string keys, rich variation/substitution keys, stale keys, non-translatable keys, already translated keys, unsafe keys, source metadata, and placeholder metadata.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
+                        "language": .object(["type": .string("string"), "description": .string("Target language code to classify")]),
+                        "compact": .object(["type": .string("boolean"), "description": .string("If true, return summary counts and key lists instead of full per-key metadata (default: false)")]),
+                    ]),
+                    "required": .array([.string("file"), .string("language")]),
+                ])
+            ),
+            Tool(
+                name: "xcatalog_validate_catalog",
+                description: "Validate JSON parseability, model decoding, placeholder consistency, rich substitution/variation preservation, suspicious keys, and optional xcstringstool compile --dry-run.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
+                        "validateCompile": .object(["type": .string("boolean"), "description": .string("If true, run xcstringstool compile --dry-run (default: false)")]),
+                        "languages": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("string")]),
+                            "description": .string("Optional languages to pass to xcstringstool. If omitted, all catalog languages compile."),
+                        ]),
+                        "compact": .object(["type": .string("boolean"), "description": .string("If true, return summary counts and a short issue list instead of full nested validation reports (default: false)")]),
+                    ]),
+                    "required": .array([.string("file")]),
+                ])
+            ),
+            Tool(
+                name: "xcatalog_validate_placeholders",
+                description: "Validate placeholder consistency for every translated locale in a catalog, including printf placeholders, substitution placeholders, and variation values.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
+                    ]),
+                    "required": .array([.string("file")]),
+                ])
+            ),
+            Tool(
+                name: "xcatalog_find_suspicious_keys",
+                description: "Find empty, punctuation-only, or format-only keys that are likely accidental SwiftUI catalog entries such as \"\", \"/\", or \"(%@)\".",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
+                    ]),
+                    "required": .array([.string("file")]),
+                ])
+            ),
+            Tool(
+                name: "xcatalog_batch_list_stale",
                 description: "List keys with stale extraction state across multiple xcstrings files at once. Returns stale keys per file and total count.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -95,7 +161,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_get_source_language",
+                name: "xcatalog_get_source_language",
                 description: "Get the source language of the xcstrings file",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -106,7 +172,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_get_key",
+                name: "xcatalog_get_key",
                 description: "Get metadata and translations for a specific key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -119,7 +185,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_check_key",
+                name: "xcatalog_check_key",
                 description: "Check if a key exists in the xcstrings file",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -132,7 +198,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_check_coverage",
+                name: "xcatalog_check_coverage",
                 description: "Get translation coverage for a specific key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -144,7 +210,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_stats_coverage",
+                name: "xcatalog_stats_coverage",
                 description: "Get overall translation statistics. Compact mode keeps incomplete languages and reports not-applicable coverage explicitly.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -156,7 +222,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_stats_progress",
+                name: "xcatalog_stats_progress",
                 description: "Get translation progress for a specific language",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -168,7 +234,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_batch_stats_coverage",
+                name: "xcatalog_batch_stats_coverage",
                 description: "Get token-efficient coverage statistics for multiple xcstrings files at once. Returns compact summaries per language for each file and aggregated totals, including explicit not-applicable coverage states.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -180,7 +246,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_batch_check_keys",
+                name: "xcatalog_batch_check_keys",
                 description: "Check if multiple keys exist in the xcstrings file. Returns results for each key.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -193,7 +259,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_batch_add_translations",
+                name: "xcatalog_batch_add_translations",
                 description: "Add translations for multiple keys at once. Each entry contains a key and its translations for multiple languages.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -217,7 +283,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_batch_update_translations",
+                name: "xcatalog_batch_update_translations",
                 description: "Update translations for multiple keys at once. Each entry contains a key and its translations for multiple languages.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -239,9 +305,27 @@ public struct XCStringsMCPServer {
                     "required": .array([.string("file"), .string("entries")]),
                 ])
             ),
+            Tool(
+                name: "xcatalog_supplement_locale",
+                description: "Atomically supplement one target locale from a key-to-value translation map. Validates the whole plan before writing, supports dryRun, refuses partial writes by default, reports per-key diagnostics and placeholder validation details, and can optionally compile a temporary catalog before saving.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "file": .object(["type": .string("string"), "description": .string("Path to the xcstrings file")]),
+                        "language": .object(["type": .string("string"), "description": .string("Target language code to supplement")]),
+                        "translations": .object(["type": .string("object"), "description": .string("Object mapping string keys to target-language values")]),
+                        "dryRun": .object(["type": .string("boolean"), "description": .string("If true, return the write plan without mutating the catalog; with validateCompile, compile the projected temporary catalog only (default: false)")]),
+                        "allowPartial": .object(["type": .string("boolean"), "description": .string("If true, write valid entries even when other entries are unsafe or failed (default: false)")]),
+                        "overwrite": .object(["type": .string("boolean"), "description": .string("If true, update existing target localizations when values differ (default: false)")]),
+                        "validateCompile": .object(["type": .string("boolean"), "description": .string("If true, run xcstringstool compile --dry-run on a projected temporary catalog before saving or during dry-run (default: false)")]),
+                        "compact": .object(["type": .string("boolean"), "description": .string("If true, return summary counts, placeholder/compile status, and remaining untranslated keys instead of the full plan (default: false)")]),
+                    ]),
+                    "required": .array([.string("file"), .string("language"), .string("translations")]),
+                ])
+            ),
             // Create operations
             Tool(
-                name: "xcstrings_create_file",
+                name: "xcatalog_create_file",
                 description: "Create a new xcstrings file with the specified source language",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -255,7 +339,7 @@ public struct XCStringsMCPServer {
             ),
             // Write operations
             Tool(
-                name: "xcstrings_add_translation",
+                name: "xcatalog_add_translation",
                 description: "Add a translation for a key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -269,7 +353,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_add_translations",
+                name: "xcatalog_add_translations",
                 description: "Add translations for multiple languages at once",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -282,7 +366,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_update_translation",
+                name: "xcatalog_update_translation",
                 description: "Update a translation for a key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -296,7 +380,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_update_translations",
+                name: "xcatalog_update_translations",
                 description: "Update translations for multiple languages at once",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -309,7 +393,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_rename_key",
+                name: "xcatalog_rename_key",
                 description: "Rename a key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -323,7 +407,7 @@ public struct XCStringsMCPServer {
             ),
             // Delete operations
             Tool(
-                name: "xcstrings_delete_key",
+                name: "xcatalog_delete_key",
                 description: "Delete a key entirely",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -335,7 +419,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_delete_translation",
+                name: "xcatalog_delete_translation",
                 description: "Delete a specific translation for a key",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -348,7 +432,7 @@ public struct XCStringsMCPServer {
                 ])
             ),
             Tool(
-                name: "xcstrings_delete_translations",
+                name: "xcatalog_delete_translations",
                 description: "Delete translations for multiple languages at once",
                 inputSchema: .object([
                     "type": .string("object"),

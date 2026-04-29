@@ -145,6 +145,32 @@ struct BatchOperationsTests {
         #expect(translation["ja"]?.value == "こんにちは")
     }
 
+    @Test("addTranslationsBatch reports placeholder validations and rejects unsafe entries")
+    func addTranslationsBatchReportsPlaceholderValidations() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(
+                key: "sample.library.itemAccessibilityLabel",
+                translations: ["es": "Píxeles: %2$lld por %3$lld, elemento %1$@"]
+            ),
+            BatchTranslationEntry(
+                key: "sample.action.preview",
+                translations: ["es": "Vista previa %@"]
+            ),
+        ]
+
+        let result = try await parser.addTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.failedCount == 1)
+        #expect(result.placeholderValidations.filter(\.checked).count == 1)
+        #expect(result.failed[0].key == "sample.action.preview")
+        #expect(result.failed[0].error.contains("Unsafe format string"))
+    }
+
     @Test("addTranslationsBatch handles duplicate and overwrite scenarios", arguments: BatchAddTestCase.allCases)
     func addTranslationsBatchDuplicateHandling(testCase: BatchAddTestCase) async throws {
         let path = try TestHelper.createTempFile(content: testCase.fixture.content)

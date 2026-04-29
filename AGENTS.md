@@ -1,4 +1,4 @@
-# xcstrings-crud
+# xcatalog
 
 CLI and MCP server for xcstrings (String Catalog) CRUD operations.
 
@@ -15,7 +15,7 @@ swift build -c release # Release build
 - `XCStringsKit/` - Core library (models, parser, reader, writer, stats)
 - `XCStringsCLI/` - CLI commands using ArgumentParser (includes MCP subcommand)
 - `XCStringsMCP/` - MCP server using swift-sdk
-- `xcstrings-crud/` - CLI entry point (`xcstrings-crud mcp` for MCP server)
+- `xcatalog/` - CLI entry point (`xcatalog mcp` for MCP server)
 
 ## Code Style
 

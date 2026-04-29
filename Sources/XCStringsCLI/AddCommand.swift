@@ -54,17 +54,20 @@ extension AddCommand {
 
         func run() async throws {
             let parser = XCStringsParser(path: file)
+            let writeResult: TranslationWriteResult
 
             if !translations.isEmpty {
                 let translationsDict = try TranslationParser.parse(translations)
-                try await parser.addTranslations(key: key, translations: translationsDict)
+                writeResult = try await parser.addTranslations(key: key, translations: translationsDict)
             } else if let lang = lang, let value = value {
-                try await parser.addTranslation(key: key, language: lang, value: value)
+                writeResult = try await parser.addTranslation(key: key, language: lang, value: value)
             } else {
                 return
             }
 
-            let result = CLIResult.success(message: "Translation added successfully")
+            let result = CLIResult.success(
+                message: "Translation added successfully. Placeholder validation: \(writeResult.placeholderValidationSummary)"
+            )
             try CLIOutput.printJSON(result, pretty: pretty)
         }
     }

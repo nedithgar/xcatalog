@@ -4,10 +4,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "xcstrings-crud",
+    name: "xcatalog",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "xcstrings-crud", targets: ["xcstrings-crud"]),
+        .executable(name: "xcatalog", targets: ["xcatalog"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -38,7 +38,7 @@ let package = Package(
 
         // CLI実行ファイル
         .executableTarget(
-            name: "xcstrings-crud",
+            name: "xcatalog",
             dependencies: ["XCStringsCLI"]
         ),
 
@@ -46,6 +46,13 @@ let package = Package(
         .testTarget(
             name: "XCStringsKitTests",
             dependencies: ["XCStringsKit"]
+        ),
+        .testTarget(
+            name: "XCStringsCLITests",
+            dependencies: [
+                "XCStringsCLI",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
         ),
         .testTarget(
             name: "XCStringsMCPTests",

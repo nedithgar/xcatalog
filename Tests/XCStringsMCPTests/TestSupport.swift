@@ -276,6 +276,120 @@ enum TestFixtures {
       "version": "1.2"
     }
     """
+
+    static let preflightMixedCatalog = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "already.translated": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Already translated"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Ya traducido"
+              }
+            }
+          }
+        },
+        "brand.name": {
+          "comment": "A brand-like proper noun that should not be translated.",
+          "shouldTranslate": false
+        },
+        "format.missing": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Item %1$@ has %2$lld matches"
+              }
+            }
+          }
+        },
+        "plain.missing": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Import"
+              }
+            }
+          }
+        },
+        "stale.missing": {
+          "extractionState": "stale",
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Old Copy"
+              }
+            }
+          }
+        },
+        "substitution.missing": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "variation.missing": {
+          "localizations": {
+            "en": {
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld item"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld items"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
 }
 
 enum TestHelper {

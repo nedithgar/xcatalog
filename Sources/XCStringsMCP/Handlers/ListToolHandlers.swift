@@ -5,7 +5,7 @@ import XCStringsKit
 // MARK: - List Keys Handler
 
 struct ListKeysHandler: ToolHandler {
-    static let toolName = "xcstrings_list_keys"
+    static let toolName = "xcatalog_list_keys"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -18,7 +18,7 @@ struct ListKeysHandler: ToolHandler {
 // MARK: - List Languages Handler
 
 struct ListLanguagesHandler: ToolHandler {
-    static let toolName = "xcstrings_list_languages"
+    static let toolName = "xcatalog_list_languages"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -31,7 +31,7 @@ struct ListLanguagesHandler: ToolHandler {
 // MARK: - List Untranslated Handler
 
 struct ListUntranslatedHandler: ToolHandler {
-    static let toolName = "xcstrings_list_untranslated"
+    static let toolName = "xcatalog_list_untranslated"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -45,7 +45,7 @@ struct ListUntranslatedHandler: ToolHandler {
 // MARK: - List Stale Handler
 
 struct ListStaleHandler: ToolHandler {
-    static let toolName = "xcstrings_list_stale"
+    static let toolName = "xcatalog_list_stale"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -56,10 +56,28 @@ struct ListStaleHandler: ToolHandler {
     }
 }
 
+// MARK: - Preflight Locale Handler
+
+struct PreflightLocaleHandler: ToolHandler {
+    static let toolName = "xcatalog_preflight_locale"
+
+    func execute(with context: ToolContext) async throws -> String {
+        let file = try context.arguments.requireString("file")
+        let language = try context.arguments.requireString("language")
+        let compact = context.arguments.bool("compact", default: false)
+        let parser = XCStringsParser(path: file)
+        let report = try await parser.preflightLocale(language)
+        if compact {
+            return try JSONEncoderHelper.encode(report.compact)
+        }
+        return try JSONEncoderHelper.encode(report)
+    }
+}
+
 // MARK: - Batch List Stale Handler
 
 struct BatchListStaleHandler: ToolHandler {
-    static let toolName = "xcstrings_batch_list_stale"
+    static let toolName = "xcatalog_batch_list_stale"
 
     func execute(with context: ToolContext) async throws -> String {
         let files = try context.arguments.requireStringArray("files")

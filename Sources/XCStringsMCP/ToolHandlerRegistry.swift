@@ -12,12 +12,21 @@ actor ToolHandlerRegistry {
 
     /// Dictionary mapping tool names to their handlers
     private let handlers: [String: any ToolHandler] = [
+        // Health handlers
+        HealthHandler.toolName: HealthHandler(),
+
         // List handlers
         ListKeysHandler.toolName: ListKeysHandler(),
         ListLanguagesHandler.toolName: ListLanguagesHandler(),
         ListUntranslatedHandler.toolName: ListUntranslatedHandler(),
         ListStaleHandler.toolName: ListStaleHandler(),
+        PreflightLocaleHandler.toolName: PreflightLocaleHandler(),
         BatchListStaleHandler.toolName: BatchListStaleHandler(),
+
+        // Validation handlers
+        ValidateCatalogHandler.toolName: ValidateCatalogHandler(),
+        ValidatePlaceholdersHandler.toolName: ValidatePlaceholdersHandler(),
+        FindSuspiciousKeysHandler.toolName: FindSuspiciousKeysHandler(),
 
         // Get handlers
         GetSourceLanguageHandler.toolName: GetSourceLanguageHandler(),
@@ -49,6 +58,7 @@ actor ToolHandlerRegistry {
         BatchCheckKeysHandler.toolName: BatchCheckKeysHandler(),
         BatchAddTranslationsHandler.toolName: BatchAddTranslationsHandler(),
         BatchUpdateTranslationsHandler.toolName: BatchUpdateTranslationsHandler(),
+        SupplementLocaleHandler.toolName: SupplementLocaleHandler(),
     ]
 
     /// Get handler for a tool name

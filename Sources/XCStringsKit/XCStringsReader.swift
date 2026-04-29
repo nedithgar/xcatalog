@@ -35,10 +35,9 @@ struct XCStringsReader: Sendable {
     /// Get untranslated keys for a specific language
     func listUntranslated(for language: String) -> [String] {
         file.strings
-            .filter { _, entry in
-                entry.requiresTranslation && !entry.countsAsTranslated(for: language)
+            .compactMap { key, entry in
+                entry.requiresTranslation && !entry.countsAsTranslated(for: language) ? key : nil
             }
-            .keys
             .sorted()
     }
 
@@ -175,7 +174,8 @@ struct XCStringsReader: Sendable {
             language: language,
             value: localization.stringUnit?.value,
             state: localization.stringUnit?.state,
-            hasVariations: localization.variations != nil
+            hasVariations: localization.variations != nil,
+            hasSubstitutions: localization.substitutions != nil
         )
     }
 }

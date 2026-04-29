@@ -14,6 +14,9 @@ struct XCStringsKitCoverageTests {
             (.keyAlreadyExists(key: "Hello:ja"), "Key already exists: 'Hello:ja'"),
             (.languageNotFound(language: "ja", key: "Hello"), "Language 'ja' not found for key 'Hello'"),
             (.nonTranslatableKey(key: "BrandName"), "Cannot add or update translations for non-translatable key 'BrandName'. Change shouldTranslate before writing localizations."),
+            (.unsafeFormatString(key: "Photo", language: "es", diagnostics: ["Missing %1$@."]), "Unsafe format string for key 'Photo' language 'es': Missing %1$@."),
+            (.richLocalizationUnsupported(key: "Items", language: "es"), "Cannot add or update plain stringUnit translation for key 'Items' language 'es' because the source or target localization uses variations or substitutions. Use a variation-aware operation instead."),
+            (.concurrentWriteConflict(path: "/tmp/File.xcstrings"), "Concurrent write conflict for '/tmp/File.xcstrings'. Another write is already modifying this catalog; retry the operation or use a batch write."),
             (.writeError(path: "/tmp/File.xcstrings", reason: "disk full"), "Failed to write file at '/tmp/File.xcstrings': disk full"),
             (.invalidJSON(reason: "Unexpected token"), "Invalid JSON: Unexpected token"),
         ]

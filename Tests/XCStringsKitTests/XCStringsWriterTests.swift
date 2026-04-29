@@ -53,6 +53,79 @@ struct XCStringsWriterTests {
         }
     }
 
+    @Test("addTranslation accepts reordered positional placeholders")
+    func addTranslationAcceptsReorderedPositionalPlaceholders() throws {
+        var file = try loadFixture(TestFixtures.catalogPersistenceRegression)
+
+        file = try XCStringsWriter.addTranslation(
+            to: file,
+            key: "sample.library.itemAccessibilityLabel",
+            language: "es",
+            value: "Píxeles: %2$lld por %3$lld, elemento %1$@"
+        )
+
+        #expect(
+            file.strings["sample.library.itemAccessibilityLabel"]?.localizations?["es"]?.stringUnit?.value
+                == "Píxeles: %2$lld por %3$lld, elemento %1$@"
+        )
+    }
+
+    @Test("addTranslation rejects dropped format placeholders")
+    func addTranslationRejectsDroppedFormatPlaceholders() throws {
+        let file = try loadFixture(TestFixtures.catalogPersistenceRegression)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "sample.library.itemAccessibilityLabel",
+                language: "es",
+                value: "Elemento, %1$@, %2$lld píxeles"
+            )
+        }
+    }
+
+    @Test("addTranslation rejects type-changed format placeholders")
+    func addTranslationRejectsTypeChangedFormatPlaceholders() throws {
+        let file = try loadFixture(TestFixtures.catalogPersistenceRegression)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "sample.library.itemAccessibilityLabel",
+                language: "es",
+                value: "Elemento, %1$@, %2$d por %3$lld píxeles"
+            )
+        }
+    }
+
+    @Test("addTranslation refuses variation-backed keys")
+    func addTranslationRejectsVariationBackedKey() throws {
+        let file = try loadFixture(TestFixtures.pluralVariations)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "%lld items",
+                language: "es",
+                value: "%lld elementos"
+            )
+        }
+    }
+
+    @Test("addTranslation refuses substitution-backed keys")
+    func addTranslationRejectsSubstitutionBackedKey() throws {
+        let file = try loadFixture(TestFixtures.withSubstitutions)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "items.count",
+                language: "es",
+                value: "%#@itemCount@"
+            )
+        }
+    }
+
     // MARK: - addTranslations
 
     @Test("addTranslations adds multiple languages")
@@ -68,6 +141,18 @@ struct XCStringsWriterTests {
         #expect(file.strings["Greeting"]?.localizations?["en"]?.stringUnit?.value == "Hello")
         #expect(file.strings["Greeting"]?.localizations?["ja"]?.stringUnit?.value == "こんにちは")
         #expect(file.strings["Greeting"]?.localizations?["de"]?.stringUnit?.value == "Hallo")
+    }
+
+    @Test("addTranslations uses incoming source language value for new symbolic keys")
+    func addTranslationsUsesIncomingSourceLanguageForNewSymbolicKey() throws {
+        var file = try loadFixture(TestFixtures.empty)
+
+        file = try XCStringsWriter.addTranslations(to: file, key: "photo.accessibility.label", translations: [
+            "en": "Photo, %@, %lld pixels",
+            "es": "Foto, %1$@, %2$lld píxeles",
+        ])
+
+        #expect(file.strings["photo.accessibility.label"]?.localizations?["es"]?.stringUnit?.value == "Foto, %1$@, %2$lld píxeles")
     }
 
     @Test("addTranslations rejects non-translatable keys")
@@ -159,6 +244,38 @@ struct XCStringsWriterTests {
         #expect(throws: XCStringsError.self) {
             _ = try XCStringsWriter.updateTranslations(in: file, key: "BrandName", translations: ["ja": "更新済み"])
         }
+    }
+
+    @Test("updateTranslation rejects non-positional placeholder reordering")
+    func updateTranslationRejectsNonPositionalReordering() throws {
+        var file = try loadFixture(TestFixtures.empty)
+        file = try XCStringsWriter.addTranslation(to: file, key: "About %@ (%lld)", language: "en", value: "About %@ (%lld)")
+        file = try XCStringsWriter.addTranslation(to: file, key: "About %@ (%lld)", language: "es", value: "Acerca de %@ (%lld)")
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslation(
+                in: file,
+                key: "About %@ (%lld)",
+                language: "es",
+                value: "%lld elementos para %@"
+            )
+        }
+    }
+
+    @Test("updateTranslation accepts positional reordering for implicit source placeholders")
+    func updateTranslationAcceptsPositionalReorderingForImplicitSource() throws {
+        var file = try loadFixture(TestFixtures.empty)
+        file = try XCStringsWriter.addTranslation(to: file, key: "About %@ (%lld)", language: "en", value: "About %@ (%lld)")
+        file = try XCStringsWriter.addTranslation(to: file, key: "About %@ (%lld)", language: "es", value: "Acerca de %@ (%lld)")
+
+        file = try XCStringsWriter.updateTranslation(
+            in: file,
+            key: "About %@ (%lld)",
+            language: "es",
+            value: "%2$lld elementos para %1$@"
+        )
+
+        #expect(file.strings["About %@ (%lld)"]?.localizations?["es"]?.stringUnit?.value == "%2$lld elementos para %1$@")
     }
 
     // MARK: - renameKey

@@ -12,7 +12,7 @@ enum XCStringsWriter {
     ) throws -> XCStringsFile {
         var result = file
 
-        try validateTranslationWrite(for: key, in: result)
+        _ = try validateTranslationWrite(for: key, translations: [language: value], in: result)
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -42,7 +42,7 @@ enum XCStringsWriter {
     ) throws -> XCStringsFile {
         var result = file
 
-        try validateTranslationWrite(for: key, in: result)
+        _ = try validateTranslationWrite(for: key, translations: translations, in: result)
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -78,7 +78,7 @@ enum XCStringsWriter {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        try validateTranslationWrite(for: key, in: result)
+        _ = try validateTranslationWrite(for: key, translations: [language: value], in: result)
 
         guard result.strings[key]?.localizations?[language] != nil else {
             throw XCStringsError.languageNotFound(language: language, key: key)
@@ -103,7 +103,7 @@ enum XCStringsWriter {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        try validateTranslationWrite(for: key, in: result)
+        _ = try validateTranslationWrite(for: key, translations: translations, in: result)
 
         for (language, value) in translations {
             guard result.strings[key]?.localizations?[language] != nil else {
@@ -211,22 +211,29 @@ enum XCStringsWriter {
         var result = file
         var succeeded: [String] = []
         var failed: [BatchWriteError] = []
+        var placeholderValidations: [PlaceholderValidationResult] = []
 
         for entry in entries {
             do {
+                let validations = try validateTranslationWrite(
+                    for: entry.key,
+                    translations: entry.translations,
+                    in: result
+                )
                 result = try addTranslations(
                     to: result,
                     key: entry.key,
                     translations: entry.translations,
                     allowOverwrite: allowOverwrite
                 )
+                placeholderValidations.append(contentsOf: validations)
                 succeeded.append(entry.key)
             } catch {
                 failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed))
+        return (result, BatchWriteResult(succeeded: succeeded, failed: failed, placeholderValidations: placeholderValidations))
     }
 
     /// Update translations for multiple keys at once
@@ -237,26 +244,80 @@ enum XCStringsWriter {
         var result = file
         var succeeded: [String] = []
         var failed: [BatchWriteError] = []
+        var placeholderValidations: [PlaceholderValidationResult] = []
 
         for entry in entries {
             do {
+                let validations = try validateTranslationWrite(
+                    for: entry.key,
+                    translations: entry.translations,
+                    in: result
+                )
                 result = try updateTranslations(
                     in: result,
                     key: entry.key,
                     translations: entry.translations
                 )
+                placeholderValidations.append(contentsOf: validations)
                 succeeded.append(entry.key)
             } catch {
                 failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed))
+        return (result, BatchWriteResult(succeeded: succeeded, failed: failed, placeholderValidations: placeholderValidations))
     }
 
-    private static func validateTranslationWrite(for key: String, in file: XCStringsFile) throws {
+    static func validateTranslationWrite(
+        for key: String,
+        translations: [String: String],
+        in file: XCStringsFile
+    ) throws -> [PlaceholderValidationResult] {
         guard file.strings[key]?.shouldTranslate != false else {
             throw XCStringsError.nonTranslatableKey(key: key)
+        }
+
+        guard let entry = file.strings[key] else {
+            let sourceValue = translations[file.sourceLanguage] ?? key
+            return try translations.map { language, value in
+                let validation = FormatStringSafety.validate(
+                    key: key,
+                    language: language,
+                    sourceValue: language == file.sourceLanguage ? value : sourceValue,
+                    targetValue: value
+                )
+                try throwIfInvalid(validation)
+                return validation
+            }
+        }
+
+        return try translations.map { language, value in
+            guard entry.localizations?[file.sourceLanguage]?.hasRichContent != true,
+                  entry.localizations?[language]?.hasRichContent != true else {
+                throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
+            }
+
+            let sourceValue = entry.localizations?[file.sourceLanguage]?.stringUnit?.value
+                ?? translations[file.sourceLanguage]
+                ?? key
+            let validation = FormatStringSafety.validate(
+                key: key,
+                language: language,
+                sourceValue: language == file.sourceLanguage ? value : sourceValue,
+                targetValue: value
+            )
+            try throwIfInvalid(validation)
+            return validation
+        }
+    }
+
+    private static func throwIfInvalid(_ validation: PlaceholderValidationResult) throws {
+        if !validation.isValid {
+            throw XCStringsError.unsafeFormatString(
+                key: validation.key,
+                language: validation.language,
+                diagnostics: validation.diagnostics
+            )
         }
     }
 }

@@ -6,7 +6,7 @@ struct ListCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
         abstract: "List keys, languages, untranslated, or stale items",
-        subcommands: [Keys.self, Languages.self, Untranslated.self, Stale.self]
+        subcommands: [Keys.self, Languages.self, Untranslated.self, Stale.self, Preflight.self]
     )
 }
 
@@ -87,6 +87,35 @@ extension ListCommand {
             let parser = XCStringsParser(path: file)
             let staleKeys = try await parser.listStaleKeys()
             try CLIOutput.printJSON(staleKeys, pretty: pretty)
+        }
+    }
+
+    struct Preflight: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "preflight",
+            abstract: "Classify target-locale work before writing translations"
+        )
+
+        @Option(name: .shortAndLong, help: "Path to the xcstrings file")
+        var file: String
+
+        @Option(name: .shortAndLong, help: "Target language code to classify")
+        var lang: String
+
+        @Flag(name: .long, help: "Output in pretty-printed JSON format")
+        var pretty = false
+
+        @Flag(name: .long, help: "Output a compact planning summary instead of full per-key metadata")
+        var compact = false
+
+        func run() async throws {
+            let parser = XCStringsParser(path: file)
+            let report = try await parser.preflightLocale(lang)
+            if compact {
+                try CLIOutput.printJSON(report.compact, pretty: pretty)
+            } else {
+                try CLIOutput.printJSON(report, pretty: pretty)
+            }
         }
     }
 }
