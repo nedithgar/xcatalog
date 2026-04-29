@@ -365,8 +365,8 @@ enum XCStringsWriter {
                 throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
             }
 
-            let sourceValue = entry.localizations?[file.sourceLanguage]?.stringUnit?.value
-                ?? translations[file.sourceLanguage]
+            let sourceValue = translations[file.sourceLanguage]
+                ?? entry.localizations?[file.sourceLanguage]?.stringUnit?.value
                 ?? key
             let validation = FormatStringSafety.validate(
                 key: key,

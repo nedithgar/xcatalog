@@ -190,6 +190,23 @@ struct XCStringsWriterTests {
         #expect(file.strings["photo.accessibility.label"]?.localizations?["es"]?.stringUnit?.value == "Foto, %1$@, %2$lld píxeles")
     }
 
+    @Test("addTranslations overwrite validates sibling languages against incoming source value")
+    func addTranslationsOverwriteValidatesSiblingLanguagesAgainstIncomingSourceValue() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslations(
+                to: file,
+                key: "photo.title",
+                translations: [
+                    "en": "Photo %@",
+                    "es": "Foto",
+                ],
+                allowOverwrite: true
+            )
+        }
+    }
+
     @Test("addTranslations rejects non-translatable keys")
     func addTranslationsRejectNonTranslatableKey() throws {
         let file = try loadFixture(TestFixtures.withNonTranslatableKey)
@@ -281,6 +298,39 @@ struct XCStringsWriterTests {
         assertJapaneseSettingsMetadataPreserved(in: file, value: "更新済み設定")
     }
 
+    @Test("updateTranslations validates sibling languages against incoming source value")
+    func updateTranslationsValidatesSiblingLanguagesAgainstIncomingSourceValue() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.updateTranslations(
+                in: file,
+                key: "photo.title",
+                translations: [
+                    "en": "Photo %@",
+                    "es": "Foto",
+                ]
+            )
+        }
+    }
+
+    @Test("updateTranslations accepts sibling languages that preserve incoming source placeholders")
+    func updateTranslationsAcceptsSiblingLanguagesPreservingIncomingSourcePlaceholders() throws {
+        var file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        file = try XCStringsWriter.updateTranslations(
+            in: file,
+            key: "photo.title",
+            translations: [
+                "en": "Photo %@",
+                "es": "Foto %@",
+            ]
+        )
+
+        #expect(file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo %@")
+        #expect(file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto %@")
+    }
+
     @Test("addTranslationsBatch overwrite preserves existing localization metadata")
     func addTranslationsBatchOverwritePreservesLocalizationMetadata() throws {
         let file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
@@ -310,6 +360,29 @@ struct XCStringsWriterTests {
 
         #expect(result.result.successCount == 1)
         assertJapaneseSettingsMetadataPreserved(in: result.file, value: "更新済み設定")
+    }
+
+    @Test("updateTranslationsBatch validates sibling languages against incoming source value")
+    func updateTranslationsBatchValidatesSiblingLanguagesAgainstIncomingSourceValue() throws {
+        let file = try loadFixture(Self.catalogWithSiblingSourceUpdate)
+
+        let result = XCStringsWriter.updateTranslationsBatch(
+            in: file,
+            entries: [
+                BatchTranslationEntry(
+                    key: "photo.title",
+                    translations: [
+                        "en": "Photo %@",
+                        "es": "Foto",
+                    ]
+                ),
+            ]
+        )
+
+        #expect(result.result.successCount == 0)
+        #expect(result.result.failedCount == 1)
+        #expect(result.file.strings["photo.title"]?.localizations?["en"]?.stringUnit?.value == "Photo")
+        #expect(result.file.strings["photo.title"]?.localizations?["es"]?.stringUnit?.value == "Foto")
     }
 
     @Test("updateTranslations throws for non-existent key")
@@ -529,6 +602,31 @@ struct XCStringsWriterTests {
               },
               "localizationNote": "reviewed-by-l10n",
               "vendorStatus": "approved"
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithSiblingSourceUpdate = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "photo.title": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Photo"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Foto"
+              }
             }
           }
         }
