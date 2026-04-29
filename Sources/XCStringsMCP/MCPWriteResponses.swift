@@ -109,7 +109,7 @@ struct MCPWriteResponse: Codable, Sendable {
         self.file = file
         self.operationType = operationType
         self.key = key
-        self.languages = languages.sorted()
+        self.languages = Set(languages).sorted()
         self.fileChanged = fileChanged
         self.insertedCount = entries.filter { $0.action == .inserted }.count
         self.updatedCount = entries.filter { $0.action == .updated }.count

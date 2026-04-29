@@ -993,6 +993,7 @@ struct ToolHandlerIntegrationTests {
         #expect(response.success)
         #expect(response.operationType == .batchAddTranslations)
         #expect(response.file == path)
+        #expect(response.languages == ["en", "ja"])
         #expect(response.fileChanged)
         #expect(response.insertedCount == 3)
         #expect(response.batchResult?.successCount == 2)
