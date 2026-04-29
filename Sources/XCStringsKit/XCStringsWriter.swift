@@ -50,7 +50,7 @@ enum XCStringsWriter {
             result.strings[key]?.localizations = [:]
         }
 
-        for (language, value) in translations {
+        for (language, value) in sortedTranslations(translations) {
             if !allowOverwrite, result.strings[key]?.localizations?[language] != nil {
                 throw XCStringsError.keyAlreadyExists(key: "\(key):\(language)")
             }
@@ -99,7 +99,7 @@ enum XCStringsWriter {
 
         _ = try validateTranslationWrite(for: key, translations: translations, in: result)
 
-        for (language, value) in translations {
+        for (language, value) in sortedTranslations(translations) {
             guard result.strings[key]?.localizations?[language] != nil else {
                 throw XCStringsError.languageNotFound(language: language, key: key)
             }
@@ -220,7 +220,7 @@ enum XCStringsWriter {
                 }
 
                 var languageResults: [BatchWriteLanguageResult] = []
-                for (language, value) in entry.translations {
+                for (language, value) in sortedTranslations(entry.translations) {
                     let previousState = translationSnapshot(in: candidate, key: entry.key, language: language)
                     if !allowOverwrite, previousState != nil {
                         throw XCStringsError.keyAlreadyExists(key: "\(entry.key):\(language)")
@@ -290,7 +290,7 @@ enum XCStringsWriter {
                 }
 
                 var languageResults: [BatchWriteLanguageResult] = []
-                for (language, value) in entry.translations {
+                for (language, value) in sortedTranslations(entry.translations) {
                     guard let previousState = translationSnapshot(in: candidate, key: entry.key, language: language) else {
                         throw XCStringsError.languageNotFound(language: language, key: entry.key)
                     }
@@ -347,7 +347,7 @@ enum XCStringsWriter {
 
         guard let entry = file.strings[key] else {
             let sourceValue = translations[file.sourceLanguage] ?? key
-            return try translations.map { language, value in
+            return try sortedTranslations(translations).map { language, value in
                 let validation = FormatStringSafety.validate(
                     key: key,
                     language: language,
@@ -359,7 +359,7 @@ enum XCStringsWriter {
             }
         }
 
-        var validations = try translations.map { language, value in
+        var validations = try sortedTranslations(translations).map { language, value in
             guard entry.localizations?[file.sourceLanguage]?.hasRichContent != true,
                   entry.localizations?[language]?.hasRichContent != true else {
                 throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
@@ -404,6 +404,22 @@ enum XCStringsWriter {
         }
     }
 
+    private static func sortedTranslations(
+        _ translations: [String: String]
+    ) -> [(language: String, value: String)] {
+        translations
+            .sorted { $0.key < $1.key }
+            .map { (language: $0.key, value: $0.value) }
+    }
+
+    private static func sortedLocalizations(
+        _ localizations: OrderedStringDictionary<Localization>
+    ) -> [(language: String, localization: Localization)] {
+        localizations
+            .sortedByKey()
+            .map { (language: $0.key, localization: $0.value) }
+    }
+
     private static func validateExistingTargets(
         for key: String,
         incomingSourceValue: String,
@@ -413,7 +429,7 @@ enum XCStringsWriter {
     ) throws -> [PlaceholderValidationResult] {
         var validations: [PlaceholderValidationResult] = []
 
-        for (language, localization) in entry.localizations ?? [:] {
+        for (language, localization) in sortedLocalizations(entry.localizations ?? [:]) {
             guard language != sourceLanguage,
                   !replacingLanguages.contains(language) else {
                 continue

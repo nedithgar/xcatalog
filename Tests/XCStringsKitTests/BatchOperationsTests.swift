@@ -146,6 +146,30 @@ struct BatchOperationsTests {
         #expect(translation["ja"]?.value == "こんにちは")
     }
 
+    @Test("addTranslationsBatch orders per-language results by language code")
+    func addTranslationsBatchOrdersLanguageResults() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.empty.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(
+                key: "Greeting",
+                translations: [
+                    "ja": "こんにちは",
+                    "en": "Hello",
+                    "fr": "Bonjour",
+                ]
+            ),
+        ]
+
+        let result = try await parser.addTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.entryResults[0].languageResults.map(\.language) == ["en", "fr", "ja"])
+        #expect(result.placeholderValidations.map(\.language) == ["en", "fr", "ja"])
+    }
+
     @Test("addTranslationsBatch reports placeholder validations and rejects unsafe entries")
     func addTranslationsBatchReportsPlaceholderValidations() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
@@ -291,6 +315,30 @@ struct BatchOperationsTests {
 
         let welcomeTranslation = try await parser.getTranslation(key: "Welcome", language: "en")
         #expect(welcomeTranslation["en"]?.value == "Welcome!")
+    }
+
+    @Test("updateTranslationsBatch orders per-language results by language code")
+    func updateTranslationsBatchOrdersLanguageResults() async throws {
+        let path = try TestHelper.createTempFile(content: FixtureType.singleKeyMultipleLangs.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let entries = [
+            BatchTranslationEntry(
+                key: "Hello",
+                translations: [
+                    "ja": "やあ",
+                    "en": "Hi",
+                    "de": "Guten Tag",
+                ]
+            ),
+        ]
+
+        let result = try await parser.updateTranslationsBatch(entries: entries)
+
+        #expect(result.successCount == 1)
+        #expect(result.entryResults[0].languageResults.map(\.language) == ["de", "en", "ja"])
+        #expect(result.placeholderValidations.map(\.language) == ["de", "en", "ja"])
     }
 
     @Test("updateTranslationsBatch fails for invalid scenarios", arguments: BatchUpdateFailureTestCase.allCases)
