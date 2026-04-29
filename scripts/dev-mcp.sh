@@ -7,9 +7,22 @@ REPO_ROOT=${SCRIPT_DIR:h}
 cd "$REPO_ROOT"
 
 export XCATALOG_GIT_COMMIT=${XCATALOG_GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}
-export XCATALOG_BUILD_CONFIGURATION=${XCATALOG_BUILD_CONFIGURATION:-debug}
+BUILD_CONFIGURATION=${XCATALOG_BUILD_CONFIGURATION:-debug}
+BUILD_CONFIGURATION=${BUILD_CONFIGURATION:l}
+
+case "$BUILD_CONFIGURATION" in
+    debug|release)
+        ;;
+    *)
+        echo "XCATALOG_BUILD_CONFIGURATION must be 'debug' or 'release' (got '$BUILD_CONFIGURATION')" >&2
+        exit 64
+        ;;
+esac
+
+export XCATALOG_BUILD_CONFIGURATION=$BUILD_CONFIGURATION
 export XCATALOG_BUILD_DATE=${XCATALOG_BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
 
-swift build -c debug --product xcatalog >&2
+swift build -c "$XCATALOG_BUILD_CONFIGURATION" --product xcatalog >&2
+BUILD_BIN_PATH=$(swift build -c "$XCATALOG_BUILD_CONFIGURATION" --show-bin-path)
 
-exec "$REPO_ROOT/.build/debug/xcatalog" mcp "$@"
+exec "$BUILD_BIN_PATH/xcatalog" mcp "$@"

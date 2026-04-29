@@ -113,11 +113,13 @@ For feedback-loop development against a local checkout, point your MCP client at
 }
 ```
 
-The launcher rebuilds the debug product, exports build metadata, and then starts:
+The launcher rebuilds the debug product by default, exports build metadata, resolves the executable with `swift build --show-bin-path`, and then starts the matching product. For standard local builds, that product is also available through SwiftPM's convenience path:
 
 ```bash
 /absolute/path/to/xcatalog/.build/debug/xcatalog mcp
 ```
+
+Set `XCATALOG_BUILD_CONFIGURATION=release` to rebuild and run the release product instead.
 
 Use `xcatalog_health` at the start of a local development session to verify which server process is running. By default, the response omits local filesystem paths and returns public metadata such as version, server name, tool schema version, build configuration, build date, and git commit only when `XCATALOG_GIT_COMMIT` is provided by the launcher. To include `binaryPath`, `currentWorkingDirectory`, and parsed `XCATALOG_ALLOWED_ROOTS`, set `XCATALOG_HEALTH_INCLUDE_SENSITIVE=true` on the server and call `xcatalog_health` with `includeSensitivePaths: true`. `XCATALOG_ALLOWED_ROOTS` is diagnostic health metadata only; read and write tools operate on the explicit file paths passed in each request.
 
