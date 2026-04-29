@@ -193,6 +193,67 @@ struct LocaleSupplementWorkflowTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == originalData)
     }
 
+    @Test("supplementLocale all-blocked missing-key partial dry run is not successful")
+    func supplementLocaleAllBlockedMissingKeyPartialDryRunIsNotSuccessful() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+        let originalData = try Data(contentsOf: URL(fileURLWithPath: path))
+
+        let parser = XCStringsParser(path: path)
+        let result = try await parser.supplementLocale(
+            language: "es",
+            translations: ["Missing": "Falta"],
+            dryRun: true,
+            allowPartial: true
+        )
+
+        #expect(result.status == .dryRun)
+        #expect(result.success == false)
+        #expect(result.fileChanged == false)
+        #expect(result.wouldWrite == false)
+        #expect(result.counts.failed == 1)
+        #expect(result.counts.inserted == 0)
+        #expect(result.counts.updated == 0)
+
+        let compact = result.compact(remainingUntranslatedKeys: [])
+        #expect(compact.success == false)
+        #expect(compact.wouldWrite == false)
+        #expect(compact.counts.failed == 1)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == originalData)
+    }
+
+    @Test("supplementLocale all-blocked unsafe partial dry run is not successful")
+    func supplementLocaleAllBlockedUnsafePartialDryRunIsNotSuccessful() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
+        defer { TestHelper.removeTempFile(at: path) }
+        let originalData = try Data(contentsOf: URL(fileURLWithPath: path))
+
+        let parser = XCStringsParser(path: path)
+        let result = try await parser.supplementLocale(
+            language: "es",
+            translations: ["sample.library.itemAccessibilityLabel": "Elemento sin dimensiones"],
+            dryRun: true,
+            allowPartial: true
+        )
+
+        #expect(result.status == .dryRun)
+        #expect(result.success == false)
+        #expect(result.fileChanged == false)
+        #expect(result.wouldWrite == false)
+        #expect(result.counts.unsafe == 1)
+        #expect(result.counts.inserted == 0)
+        #expect(result.counts.updated == 0)
+        #expect(result.placeholderValidations.count == 1)
+        #expect(result.placeholderValidations[0].isValid == false)
+
+        let compact = result.compact(remainingUntranslatedKeys: [])
+        #expect(compact.success == false)
+        #expect(compact.wouldWrite == false)
+        #expect(compact.counts.unsafe == 1)
+        #expect(compact.placeholderValidation.failed == 1)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == originalData)
+    }
+
     @Test("supplementLocale dry-run compile validation runs xcstringstool when available")
     func supplementLocaleDryRunCompileValidationRunsXCStringsTool() async throws {
         guard xcstringstoolIsAvailable() else {

@@ -253,6 +253,10 @@ package struct LocaleSupplementResult: Codable, Sendable {
             return false
         }
 
+        guard !(status == .dryRun && plan.hasBlockingDiagnostics && !plan.hasWritableChanges) else {
+            return false
+        }
+
         return true
     }
 }
