@@ -38,7 +38,7 @@ struct HealthInfo: Codable, Sendable {
             serverName: XCStringsMCPMetadata.serverName,
             toolSchemaVersion: XCStringsMCPMetadata.toolSchemaVersion,
             binaryPath: shouldIncludeSensitivePaths ? resolvedExecutablePath : nil,
-            gitCommit: environment["XCATALOG_GIT_COMMIT"] ?? gitCommit(from: currentDirectoryPath),
+            gitCommit: buildMetadataValue("XCATALOG_GIT_COMMIT", from: environment),
             buildConfiguration: environment["XCATALOG_BUILD_CONFIGURATION"] ?? buildConfiguration(from: resolvedExecutablePath),
             buildDate: environment["XCATALOG_BUILD_DATE"] ?? executableModificationDate(at: resolvedExecutablePath),
             currentWorkingDirectory: shouldIncludeSensitivePaths ? currentDirectoryPath : nil,
@@ -57,6 +57,16 @@ struct HealthInfo: Codable, Sendable {
         default:
             return false
         }
+    }
+
+    private static func buildMetadataValue(_ key: String, from environment: [String: String]) -> String? {
+        guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty
+        else {
+            return nil
+        }
+
+        return value
     }
 
     private static func allowedRoots(from environment: [String: String]) -> [String] {
@@ -91,32 +101,5 @@ struct HealthInfo: Codable, Sendable {
         }
 
         return ISO8601DateFormatter().string(from: modificationDate)
-    }
-
-    private static func gitCommit(from directory: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", directory, "rev-parse", "--short", "HEAD"]
-
-        let output = Pipe()
-        let error = Pipe()
-        process.standardOutput = output
-        process.standardError = error
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let commit = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return commit?.isEmpty == false ? commit : nil
     }
 }

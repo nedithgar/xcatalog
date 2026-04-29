@@ -51,6 +51,47 @@ struct ToolHandlerIntegrationTests {
         #expect(health.allowedRoots == nil)
     }
 
+    @Test("HealthInfo reports git commit only from explicit build metadata")
+    func healthInfoReportsGitCommitOnlyFromExplicitBuildMetadata() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xcatalog-client-workspace-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workspaceURL) }
+
+        _ = try runGit(["init"], in: workspaceURL)
+        try "client workspace\n".write(
+            to: workspaceURL.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        _ = try runGit(["add", "README.md"], in: workspaceURL)
+        _ = try runGit([
+            "-c", "user.name=xcatalog Test",
+            "-c", "user.email=xcatalog@example.invalid",
+            "-c", "commit.gpgSign=true",
+            "-c", "gpg.format=openpgp",
+            "-c", "gpg.program=/usr/bin/false",
+            "commit", "--no-gpg-sign", "-m", "Initial commit",
+        ], in: workspaceURL)
+        let workspaceCommit = try runGit(["rev-parse", "--short", "HEAD"], in: workspaceURL)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(!workspaceCommit.isEmpty)
+
+        let healthWithoutBuildMetadata = HealthInfo.current(
+            environment: [:],
+            currentDirectoryPath: workspaceURL.path,
+            executablePath: "/tmp/xcatalog"
+        )
+        #expect(healthWithoutBuildMetadata.gitCommit == nil)
+
+        let healthWithBuildMetadata = HealthInfo.current(
+            environment: ["XCATALOG_GIT_COMMIT": " xcatalog123 "],
+            currentDirectoryPath: workspaceURL.path,
+            executablePath: "/tmp/xcatalog"
+        )
+        #expect(healthWithBuildMetadata.gitCommit == "xcatalog123")
+    }
+
     @Test("HealthInfo requires request and environment opt-in for sensitive local paths")
     func healthInfoRequiresRequestAndEnvironmentOptInForSensitiveLocalPaths() {
         let environment = [
@@ -82,6 +123,48 @@ struct ToolHandlerIntegrationTests {
         #expect(blockedHealth.currentWorkingDirectory == nil)
         #expect(blockedHealth.binaryPath == nil)
         #expect(blockedHealth.allowedRoots == nil)
+    }
+
+    private func runGit(_ arguments: [String], in directory: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = directory
+        process.arguments = arguments
+
+        let output = Pipe()
+        let error = Pipe()
+        process.standardOutput = output
+        process.standardError = error
+
+        try process.run()
+        process.waitUntilExit()
+
+        let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        let outputText = String(data: outputData, encoding: .utf8) ?? ""
+        let errorText = String(data: errorData, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            throw GitCommandError(
+                arguments: arguments,
+                status: process.terminationStatus,
+                output: outputText,
+                error: errorText
+            )
+        }
+
+        return outputText
+    }
+
+    private struct GitCommandError: Error, CustomStringConvertible {
+        let arguments: [String]
+        let status: Int32
+        let output: String
+        let error: String
+
+        var description: String {
+            "git \(arguments.joined(separator: " ")) failed with status \(status): \(output)\(error)"
+        }
     }
 
     // MARK: - List Handlers
