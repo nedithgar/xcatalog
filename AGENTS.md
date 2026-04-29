@@ -61,7 +61,8 @@ Tests use fixture-based approach. See `Tests/XCStringsKitTests/TestFixtures.swif
 - Add, update, and supplement writes reject or classify as unsafe writes to keys with `shouldTranslate: false`.
 - Coverage and progress outputs use `CoverageMeasurement` with `state` (`measured` or `notApplicable`) and optional `percent`. Measured percentages are serialized rounded to two decimal places, and incomplete coverage is never rounded up to `100.0`.
 - Compact coverage summaries expose `completionState`, `incompleteLanguages`, and `notApplicableLanguages`.
-- CLI compact output is opt-in with `--compact` for preflight, stats, supplement, and catalog validation commands. MCP stats coverage tools default to compact output; pass `compact: false` for full coverage payloads.
+- CLI compact output is opt-in with `--compact` for preflight, stats, batch add, batch update, supplement, and catalog validation commands. MCP stats coverage tools default to compact output; pass `compact: false` for full coverage payloads.
+- `batch add --compact` and `batch update --compact` summarize input counts, write counts, written entries, failed entries, and placeholder validation status without full per-entry state snapshots.
 - `batch supplement` inserts missing target localizations by default. Existing target localizations become `unchanged` when values match or `skip` when values differ; pass `--overwrite` or MCP `overwrite: true` to update differing existing values.
 - `batch supplement --dry-run --validate-compile` validates a projected temporary catalog without mutating the real file. Blocking atomic plans skip compile validation unless partial writes are allowed.
 - Validation commands return structured reports for JSON/model shape, placeholders, rich substitution/variation preservation, suspicious keys, and optional `xcstringstool compile --dry-run`.

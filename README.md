@@ -283,8 +283,18 @@ xcatalog batch add --file path/to/Localizable.xcstrings \
 xcatalog batch add --file path/to/Localizable.xcstrings --overwrite \
   -e "Hello=ja:こんにちは,en:Hello"
 
+# Compact batch add summary
+xcatalog batch add --file path/to/Localizable.xcstrings --compact \
+  -e "Hello=ja:こんにちは,en:Hello" \
+  -e "Goodbye=ja:さようなら,en:Goodbye"
+
 # Update translations for multiple keys at once
 xcatalog batch update --file path/to/Localizable.xcstrings \
+  -e "Hello=ja:こんにちは！,en:Hello!" \
+  -e "Goodbye=ja:さようなら！"
+
+# Compact batch update summary
+xcatalog batch update --file path/to/Localizable.xcstrings --compact \
   -e "Hello=ja:こんにちは！,en:Hello!" \
   -e "Goodbye=ja:さようなら！"
 
@@ -323,7 +333,7 @@ xcatalog batch supplement --file path/to/Localizable.xcstrings --lang ja --overw
 
 - `--file <path>`: xcstrings file path for single-file operations. Batch file-list commands use `-f, --files`.
 - `--pretty`: Pretty-printed JSON output where supported.
-- `--compact`: Summary JSON where supported. CLI compact mode is available for `list preflight`, `stats coverage`, `stats batch-coverage`, `batch supplement`, and `validate catalog`.
+- `--compact`: Summary JSON where supported. CLI compact mode is available for `list preflight`, `stats coverage`, `stats batch-coverage`, `batch add`, `batch update`, `batch supplement`, and `validate catalog`.
 
 ## Output Notes
 
@@ -335,7 +345,8 @@ xcatalog batch supplement --file path/to/Localizable.xcstrings --lang ja --overw
 - Keys marked with `shouldTranslate: false` are excluded from untranslated lists and coverage totals. If a key, language, or file has no translatable content, coverage is reported as `notApplicable`.
 - Add, update, and supplement writes reject or classify as unsafe any localization write to keys marked `shouldTranslate: false` so coverage and write behavior stay consistent.
 - Compact coverage outputs use `completionState` and may include `incompleteLanguages` and `notApplicableLanguages`.
-- CLI compact preflight, supplement, stats, and catalog validation outputs keep the full report available by default, but return decision-oriented summaries when `--compact` is set. MCP `xcatalog_preflight_locale`, `xcatalog_supplement_locale`, and `xcatalog_validate_catalog` also default to full output unless `compact: true` is passed. MCP `xcatalog_stats_coverage` and `xcatalog_batch_stats_coverage` default to compact output; pass `compact: false` for full coverage payloads.
+- CLI compact preflight, batch write, supplement, stats, and catalog validation outputs keep the full report available by default, but return decision-oriented summaries when `--compact` is set. MCP `xcatalog_preflight_locale`, `xcatalog_supplement_locale`, and `xcatalog_validate_catalog` also default to full output unless `compact: true` is passed. MCP `xcatalog_stats_coverage` and `xcatalog_batch_stats_coverage` default to compact output; pass `compact: false` for full coverage payloads.
+- `batch add --compact` and `batch update --compact` summarize input entries, succeeded and failed entries, language writes, inserted and updated translation counts, written entries, failed entries, and placeholder validation status without returning full per-entry state snapshots.
 - `batch supplement` inserts missing target localizations by default. Existing target localizations are reported as `unchanged` when the value already matches or `skip` when the value differs; pass `--overwrite` or MCP `overwrite: true` to update differing existing target values.
 - `batch supplement --dry-run --validate-compile` applies the accepted plan to an in-memory projected catalog and runs `xcstringstool compile --dry-run` against a temporary copy without mutating the real file. If the atomic plan has blocking diagnostics and `--allow-partial` is not set, compile validation is skipped with `notRunDueToBlockingDiagnostics`. Results include `wouldWrite` and `compileValidationRanOnProjectedCatalog` so MCP clients can distinguish a plan-only dry run from a projected compile dry run.
 - Validation commands return structured reports. `validate catalog` checks JSON parseability, model decoding, placeholder consistency, rich substitution/variation preservation after an encode/decode round trip, suspicious key hygiene, and optional `xcstringstool compile --dry-run`.
