@@ -10,7 +10,8 @@ struct GetSourceLanguageHandler: ToolHandler {
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
         let parser = XCStringsParser(path: file)
-        return try await parser.getSourceLanguage()
+        let sourceLanguage = try await parser.getSourceLanguage()
+        return try JSONEncoderHelper.encode(sourceLanguage)
     }
 }
 
@@ -42,7 +43,7 @@ struct CheckKeyHandler: ToolHandler {
 
         let parser = XCStringsParser(path: file)
         let exists = try await parser.checkKey(key, language: language)
-        return String(exists)
+        return try JSONEncoderHelper.encode(exists)
     }
 }
 

@@ -24,16 +24,18 @@ package actor XCStringsParser {
     }
 
     /// Create a new xcstrings file
-    package func createFile(sourceLanguage: String, overwrite: Bool = false) async throws {
+    @discardableResult
+    package func createFile(sourceLanguage: String, overwrite: Bool = false) async throws -> Bool {
         try await withExclusiveFileAccess { fileHandler in
             try fileHandler.create(sourceLanguage: sourceLanguage, overwrite: overwrite)
         }
     }
 
     /// Create a new xcstrings file (static version for convenience)
-    package static func createFile(at path: String, sourceLanguage: String, overwrite: Bool = false) async throws {
+    @discardableResult
+    package static func createFile(at path: String, sourceLanguage: String, overwrite: Bool = false) async throws -> Bool {
         let handler = XCStringsFileHandler(path: path)
-        try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+        return try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
             try handler.create(sourceLanguage: sourceLanguage, overwrite: overwrite)
         }
     }

@@ -49,10 +49,12 @@ struct XCStringsFileHandler: Sendable {
     }
 
     /// Create a new xcstrings file
-    func create(sourceLanguage: String, overwrite: Bool = false) throws {
+    @discardableResult
+    func create(sourceLanguage: String, overwrite: Bool = false) throws -> Bool {
         let url = URL(fileURLWithPath: path)
+        let fileExisted = FileManager.default.fileExists(atPath: path)
 
-        if !overwrite && FileManager.default.fileExists(atPath: path) {
+        if !overwrite && fileExisted {
             throw XCStringsError.fileAlreadyExists(path: path)
         }
 
@@ -64,6 +66,8 @@ struct XCStringsFileHandler: Sendable {
         } catch {
             throw XCStringsError.writeError(path: path, reason: error.localizedDescription)
         }
+
+        return overwrite && fileExisted
     }
 
     private func encodedData(for file: XCStringsFile, appendTrailingNewline: Bool) throws -> Data {

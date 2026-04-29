@@ -402,7 +402,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "ja")
+        let sourceLanguage = try decodeJSON(result, as: String.self)
+        #expect(sourceLanguage == "ja")
     }
 
     @Test("GetKeyHandler returns translations for key")
@@ -519,7 +520,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "true")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(exists)
     }
 
     @Test("CheckKeyHandler returns false for non-existing key")
@@ -534,7 +536,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     @Test("CheckKeyHandler uses actual localizations for non-translatable keys")
@@ -550,7 +553,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     @Test("CheckKeyHandler treats empty localization shells as missing")
@@ -584,7 +588,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     // MARK: - Stats Handlers
@@ -682,8 +687,90 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("Created"))
+        let response = try decodeJSON(result, as: MCPCreateFileResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.sourceLanguage == "ja")
+        #expect(response.overwrote == false)
         #expect(FileManager.default.fileExists(atPath: path))
+    }
+
+    @Test("CreateFileHandler reports overwritten file")
+    func createFileHandlerReportsOverwrite() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = CreateFileHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "sourceLanguage": .string("fr"),
+            "overwrite": .bool(true)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPCreateFileResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.sourceLanguage == "fr")
+        #expect(response.overwrote)
+    }
+
+    @Test("CreateFileHandler reports overwrite status from serialized create")
+    func createFileHandlerConcurrentOverwriteStatus() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let path = tempDir.appendingPathComponent("create_concurrent_\(UUID().uuidString).xcstrings").path
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let lockEntered = AsyncStream<Void>.makeStream()
+        let releaseLock = DispatchSemaphore(value: 0)
+        let requestedLanguages = ["ja", "fr", "de", "es"]
+
+        let responses: [MCPCreateFileResponse] = try await withThrowingTaskGroup(of: MCPCreateFileResponse?.self) { group in
+            group.addTask {
+                try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+                    lockEntered.continuation.yield(())
+                    lockEntered.continuation.finish()
+                    _ = releaseLock.wait(timeout: .now() + 2)
+                }
+                return nil
+            }
+
+            guard await Self.waitForSignal(lockEntered.stream) else {
+                Issue.record("Timed out waiting for exclusive create lock")
+                releaseLock.signal()
+                try await group.waitForAll()
+                return []
+            }
+
+            for language in requestedLanguages {
+                group.addTask {
+                    let handler = CreateFileHandler()
+                    let context = ToolContext(arguments: ToolArguments(raw: [
+                        "file": .string(path),
+                        "sourceLanguage": .string(language),
+                        "overwrite": .bool(true),
+                    ]))
+                    let result = try await handler.execute(with: context)
+                    return try JSONDecoder().decode(MCPCreateFileResponse.self, from: Data(result.utf8))
+                }
+            }
+
+            try await Task.sleep(nanoseconds: 100_000_000)
+            releaseLock.signal()
+
+            var responses: [MCPCreateFileResponse] = []
+            for try await response in group {
+                if let response {
+                    responses.append(response)
+                }
+            }
+            return responses
+        }
+
+        #expect(responses.count == requestedLanguages.count)
+        #expect(responses.filter { !$0.overwrote }.count == 1)
+        #expect(responses.filter { $0.overwrote }.count == requestedLanguages.count - 1)
+        #expect(Set(responses.map { $0.sourceLanguage }) == Set(requestedLanguages))
     }
 
     // MARK: - Write Handlers
@@ -1291,6 +1378,26 @@ struct ToolHandlerIntegrationTests {
       "version": "1.0"
     }
     """
+
+    private static func waitForSignal(
+        _ stream: AsyncStream<Void>,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                var iterator = stream.makeAsyncIterator()
+                return await iterator.next() != nil
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return false
+            }
+
+            let signaled = await group.next() ?? false
+            group.cancelAll()
+            return signaled
+        }
+    }
 
     private func decodeJSON<T: Decodable>(_ string: String, as type: T.Type) throws -> T {
         let data = try #require(string.data(using: .utf8))

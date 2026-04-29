@@ -12,7 +12,20 @@ struct CreateFileHandler: ToolHandler {
         let sourceLanguage = context.arguments.optionalString("sourceLanguage") ?? "en"
         let overwrite = context.arguments.bool("overwrite", default: false)
 
-        try await XCStringsParser.createFile(at: file, sourceLanguage: sourceLanguage, overwrite: overwrite)
-        return "Created xcstrings file at '\(file)' with source language '\(sourceLanguage)'"
+        let overwrote = try await XCStringsParser.createFile(at: file, sourceLanguage: sourceLanguage, overwrite: overwrite)
+        let response = MCPCreateFileResponse(
+            success: true,
+            file: file,
+            sourceLanguage: sourceLanguage,
+            overwrote: overwrote
+        )
+        return try JSONEncoderHelper.encode(response)
     }
+}
+
+struct MCPCreateFileResponse: Codable, Equatable, Sendable {
+    let success: Bool
+    let file: String
+    let sourceLanguage: String
+    let overwrote: Bool
 }
