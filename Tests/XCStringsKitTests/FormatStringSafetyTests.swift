@@ -21,6 +21,55 @@ struct FormatStringSafetyTests {
         #expect(placeholders.map(\.specifier) == ["lld", "@"])
     }
 
+    @Test("detects i printf integer placeholders")
+    func detectsIPrintfIntegerPlaceholders() {
+        let placeholders = FormatStringSafety.placeholders(in: "Count: %i, %1$i, %hi")
+
+        #expect(placeholders.map(\.raw) == ["%i", "%1$i", "%hi"])
+        #expect(placeholders.map(\.position) == [nil, 1, nil])
+        #expect(placeholders.map(\.specifier) == ["i", "i", "hi"])
+    }
+
+    @Test("ignores literal percent copy before ordinary words")
+    func ignoresLiteralPercentCopyBeforeOrdinaryWords() {
+        let placeholders = FormatStringSafety.placeholders(
+            in: "100% increase, 0% interest, 25% discount, 30% failure, 40% complete, 50% higher"
+        )
+
+        #expect(placeholders.isEmpty)
+    }
+
+    @Test("ignores one-letter literal percent copy")
+    func ignoresOneLetterLiteralPercentCopy() {
+        let samples = [
+            "Save 20% a year",
+            "Get 10% a month",
+            "Earn 5% a day",
+            "Save 20% a.",
+        ]
+
+        for sample in samples {
+            #expect(FormatStringSafety.placeholders(in: sample).isEmpty)
+        }
+    }
+
+    @Test("detects unambiguous space-flagged printf placeholders")
+    func detectsUnambiguousSpaceFlaggedPrintfPlaceholders() {
+        let placeholders = FormatStringSafety.placeholders(in: "Values: % i, % 5i, % .3fms, %3$ i, % a year")
+
+        #expect(placeholders.map(\.raw) == ["% i", "% 5i", "% .3f", "%3$ i", "% a"])
+        #expect(placeholders.map(\.position) == [nil, nil, nil, 3, nil])
+        #expect(placeholders.map(\.specifier) == ["i", "i", "f", "i", "a"])
+    }
+
+    @Test("detects space-flagged printf placeholders with suffixes")
+    func detectsSpaceFlaggedPrintfPlaceholdersWithSuffixes() {
+        let placeholders = FormatStringSafety.placeholders(in: "Level: % dB, Latency: % ims")
+
+        #expect(placeholders.map(\.raw) == ["% d", "% i"])
+        #expect(placeholders.map(\.specifier) == ["d", "i"])
+    }
+
     @Test("detects dynamic width and precision arguments")
     func detectsDynamicWidthAndPrecisionArguments() {
         let placeholders = FormatStringSafety.placeholders(in: "Progress: %*.*f%%")
@@ -175,6 +224,47 @@ struct FormatStringSafetyTests {
 
         #expect(!result.isValid)
         #expect(result.diagnostics.joined().contains("*width, *precision, f"))
+    }
+
+    @Test("rejects dropped i printf integer placeholder")
+    func rejectsDroppedIPrintfIntegerPlaceholder() {
+        let result = FormatStringSafety.validate(
+            key: "sample.unreadCount",
+            language: "es",
+            sourceValue: "Count: %i",
+            targetValue: "Recuento"
+        )
+
+        #expect(!result.isValid)
+        #expect(result.diagnostics.joined().contains("missing required format placeholders"))
+        #expect(result.sourcePlaceholders.map(\.raw) == ["%i"])
+    }
+
+    @Test("validates translated literal percent copy without bogus placeholders")
+    func validatesTranslatedLiteralPercentCopyWithoutBogusPlaceholders() {
+        let result = FormatStringSafety.validate(
+            key: "sample.percentCopy",
+            language: "es",
+            sourceValue: "100% increase, 0% interest, and save 20% a year",
+            targetValue: "100 por ciento de aumento, 0 por ciento de interés y ahorra un 20 por ciento al año"
+        )
+
+        #expect(result.isValid)
+        #expect(!result.checked)
+    }
+
+    @Test("rejects dropped space-flagged suffix placeholder")
+    func rejectsDroppedSpaceFlaggedSuffixPlaceholder() {
+        let result = FormatStringSafety.validate(
+            key: "sample.level",
+            language: "es",
+            sourceValue: "Level: % dB, Latency: % ims",
+            targetValue: "Nivel: dB, latencia: ms"
+        )
+
+        #expect(!result.isValid)
+        #expect(result.sourcePlaceholders.map(\.raw) == ["% d", "% i"])
+        #expect(result.diagnostics.joined().contains("missing required format placeholders"))
     }
 
     @Test("rejects added repeated positional placeholder")

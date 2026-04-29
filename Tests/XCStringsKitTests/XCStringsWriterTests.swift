@@ -98,6 +98,26 @@ struct XCStringsWriterTests {
         }
     }
 
+    @Test("addTranslation rejects dropped i printf placeholder")
+    func addTranslationRejectsDroppedIPrintfPlaceholder() throws {
+        var file = try loadFixture(TestFixtures.empty)
+        file = try XCStringsWriter.addTranslation(
+            to: file,
+            key: "sample.unreadCount",
+            language: "en",
+            value: "You have %i unread messages"
+        )
+
+        #expect(throws: XCStringsError.self) {
+            _ = try XCStringsWriter.addTranslation(
+                to: file,
+                key: "sample.unreadCount",
+                language: "es",
+                value: "Tienes mensajes sin leer"
+            )
+        }
+    }
+
     @Test("addTranslation refuses variation-backed keys")
     func addTranslationRejectsVariationBackedKey() throws {
         let file = try loadFixture(TestFixtures.pluralVariations)

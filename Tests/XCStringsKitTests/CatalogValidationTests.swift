@@ -77,6 +77,34 @@ struct CatalogValidationTests {
         #expect(report.summary.invalidTranslations == 0)
     }
 
+    @Test("validatePlaceholders ignores literal percent copy before ordinary words")
+    func validatePlaceholdersIgnoresLiteralPercentCopyBeforeOrdinaryWords() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithLiteralPercentCopy)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 0)
+        #expect(report.summary.invalidTranslations == 0)
+    }
+
+    @Test("validatePlaceholders reports dropped space-flagged suffix placeholder")
+    func validatePlaceholdersReportsDroppedSpaceFlaggedSuffixPlaceholder() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithDroppedSpaceFlaggedSuffixPlaceholder)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(!report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(report.issues.first?.key == "sample")
+    }
+
     @Test("validateCatalog reports malformed rich substitution records")
     func validateCatalogReportsMalformedRichSubstitution() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSubstitutionDeclaration)
@@ -249,6 +277,56 @@ struct CatalogValidationTests {
               "stringUnit": {
                 "state": "translated",
                 "value": "%2$*1$.1f %3$*1$.1f"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithLiteralPercentCopy = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "sample": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "100% increase, 0% interest, and save 20% a year"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "100 por ciento de aumento, 0 por ciento de interés y ahorra un 20 por ciento al año"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithDroppedSpaceFlaggedSuffixPlaceholder = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "sample": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Level: % dB"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Nivel: dB"
               }
             }
           }

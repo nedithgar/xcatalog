@@ -425,6 +425,16 @@ private struct FormatPlaceholderScanner {
             return nil
         }
 
+        if isLikelyLiteralPercentWord(
+            start: start,
+            conversionIndex: index,
+            position: position,
+            name: name,
+            dynamicPlaceholders: placeholders
+        ) {
+            return nil
+        }
+
         let raw = String(characters[start ... index])
         let specifier = length + String(conversion)
         placeholders.append(
@@ -530,6 +540,31 @@ private struct FormatPlaceholderScanner {
         return ""
     }
 
+    private func isLikelyLiteralPercentWord(
+        start: Int,
+        conversionIndex: Int,
+        position: Int?,
+        name: String?,
+        dynamicPlaceholders: [FormatPlaceholder]
+    ) -> Bool {
+        guard position == nil,
+              name == nil,
+              dynamicPlaceholders.isEmpty else {
+            return false
+        }
+
+        let body = characters[(start + 1) ..< conversionIndex]
+        guard body.contains(" ") else {
+            return false
+        }
+
+        guard !body.contains(where: { Self.strongFormatEvidenceCharacters.contains($0) }) else {
+            return false
+        }
+
+        return Self.isASCIIDigit(character(at: start - 1))
+    }
+
     private func character(at index: Int) -> Character? {
         guard characters.indices.contains(index) else {
             return nil
@@ -547,7 +582,18 @@ private struct FormatPlaceholderScanner {
 
     private static let flagCharacters = Set<Character>(["-", "+", " ", "#", "0", "'"])
     private static let lengthModifiers = ["hh", "ll", "l", "h", "q", "L", "z", "t", "j"]
-    private static let conversionSpecifiers = Set<Character>(["@","d","D","u","U","x","X","o","O","f","F","e","E","g","G","a","A","c","C","s","S","p"])
+    private static let conversionSpecifiers = Set<Character>(["@","d","i","D","u","U","x","X","o","O","f","F","e","E","g","G","a","A","c","C","s","S","p"])
+    private static let strongFormatEvidenceCharacters = Set<Character>([".", "*", "$", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+
+    private static func isASCIIDigit(_ character: Character?) -> Bool {
+        guard let character,
+              character.unicodeScalars.count == 1,
+              let scalar = character.unicodeScalars.first else {
+            return false
+        }
+
+        return ("0" ... "9").contains(scalar)
+    }
 
     private enum WidthOrPrecisionRole: String {
         case width
