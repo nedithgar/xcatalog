@@ -68,34 +68,48 @@ struct ConcurrentAccessTests {
         defer { TestHelper.removeTempFile(at: path) }
 
         let lockEntered = AsyncStream<Void>.makeStream()
+        let releaseLock = AsyncStream<Void>.makeStream()
+        let canonicalPath = XCStringsFileAccessCoordinator.canonicalPath(path)
 
         try await withThrowingTaskGroup(of: Void.self) { group in
+            func releaseLockHolder() {
+                releaseLock.continuation.yield(())
+                releaseLock.continuation.finish()
+            }
+
             group.addTask {
                 try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
                     lockEntered.continuation.yield(())
                     lockEntered.continuation.finish()
-                    Thread.sleep(forTimeInterval: 0.2)
+                    _ = await Self.waitForSignal(releaseLock.stream)
                 }
             }
 
             guard await Self.waitForSignal(lockEntered.stream) else {
-                Issue.record("Timed out waiting for exclusive access to start")
+                Issue.record("Timed out waiting for exclusive access to start for \(canonicalPath)")
+                releaseLockHolder()
                 try await group.waitForAll()
                 return
             }
 
             do {
                 try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path, wait: false) {}
-                Issue.record("Expected a concurrent write conflict")
+                Issue.record("Expected a concurrent write conflict for \(canonicalPath) after the lock holder signaled entry")
             } catch let error as XCStringsError {
                 guard case let .concurrentWriteConflict(conflictPath) = error else {
-                    Issue.record("Expected concurrentWriteConflict, got \(error)")
+                    Issue.record("Expected concurrentWriteConflict for \(canonicalPath), got \(error)")
+                    releaseLockHolder()
                     try await group.waitForAll()
                     return
                 }
-                #expect(conflictPath == XCStringsFileAccessCoordinator.canonicalPath(path))
+                #expect(conflictPath == canonicalPath)
+            } catch {
+                releaseLockHolder()
+                try await group.waitForAll()
+                throw error
             }
 
+            releaseLockHolder()
             try await group.waitForAll()
         }
     }

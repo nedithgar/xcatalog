@@ -25,6 +25,24 @@ package enum XCStringsFileAccessCoordinator {
         }
     }
 
+    package static func withExclusiveAccess<T: Sendable>(
+        to path: String,
+        wait: Bool = true,
+        operation: @Sendable () async throws -> T
+    ) async throws -> T {
+        let canonicalPath = canonicalPath(path)
+        try await XCStringsFileAccessRegistry.shared.acquire(path: canonicalPath, wait: wait)
+
+        do {
+            let result = try await operation()
+            await XCStringsFileAccessRegistry.shared.release(path: canonicalPath)
+            return result
+        } catch {
+            await XCStringsFileAccessRegistry.shared.release(path: canonicalPath)
+            throw error
+        }
+    }
+
     package static func canonicalPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.path
     }
