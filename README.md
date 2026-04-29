@@ -113,7 +113,7 @@ For feedback-loop development against a local checkout, point your MCP client at
 }
 ```
 
-The launcher rebuilds the debug product by default, exports build metadata, resolves the executable with `swift build --show-bin-path`, and then starts the matching product. For standard local builds, that product is also available through SwiftPM's convenience path:
+The launcher rebuilds the debug product by default, exports build metadata, and starts the matching product from the post-build output path. For standard local builds, that product is also available through SwiftPM's convenience path:
 
 ```bash
 /absolute/path/to/xcatalog/.build/debug/xcatalog mcp
