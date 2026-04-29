@@ -44,6 +44,21 @@ struct XCStringsWriterTests {
         #expect(file.strings["Hello"]?.localizations?["en"]?.stringUnit?.value == "Updated")
     }
 
+    @Test("addTranslation overwrite preserves existing localization metadata")
+    func addTranslationOverwritePreservesLocalizationMetadata() throws {
+        var file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
+
+        file = try XCStringsWriter.addTranslation(
+            to: file,
+            key: "settings.title",
+            language: "ja",
+            value: "更新済み設定",
+            allowOverwrite: true
+        )
+
+        assertJapaneseSettingsMetadataPreserved(in: file, value: "更新済み設定")
+    }
+
     @Test("addTranslation rejects non-translatable keys")
     func addTranslationRejectsNonTranslatableKey() throws {
         let file = try loadFixture(TestFixtures.withNonTranslatableKey)
@@ -195,6 +210,20 @@ struct XCStringsWriterTests {
         #expect(file.strings["Hello"]?.localizations?["en"]?.stringUnit?.value == "Hi there")
     }
 
+    @Test("updateTranslation preserves existing localization metadata")
+    func updateTranslationPreservesLocalizationMetadata() throws {
+        var file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
+
+        file = try XCStringsWriter.updateTranslation(
+            in: file,
+            key: "settings.title",
+            language: "ja",
+            value: "更新済み設定"
+        )
+
+        assertJapaneseSettingsMetadataPreserved(in: file, value: "更新済み設定")
+    }
+
     @Test("updateTranslation throws for non-existent key")
     func updateTranslationKeyNotFound() throws {
         let file = try loadFixture(TestFixtures.singleKeySingleLang)
@@ -237,6 +266,50 @@ struct XCStringsWriterTests {
         #expect(file.strings["Hello"]?.localizations?["en"]?.stringUnit?.value == "Hi")
         #expect(file.strings["Hello"]?.localizations?["ja"]?.stringUnit?.value == "やあ")
         #expect(file.strings["Hello"]?.localizations?["de"]?.stringUnit?.value == "Hi")
+    }
+
+    @Test("updateTranslations preserves existing localization metadata")
+    func updateTranslationsPreservesLocalizationMetadata() throws {
+        var file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
+
+        file = try XCStringsWriter.updateTranslations(
+            in: file,
+            key: "settings.title",
+            translations: ["ja": "更新済み設定"]
+        )
+
+        assertJapaneseSettingsMetadataPreserved(in: file, value: "更新済み設定")
+    }
+
+    @Test("addTranslationsBatch overwrite preserves existing localization metadata")
+    func addTranslationsBatchOverwritePreservesLocalizationMetadata() throws {
+        let file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
+
+        let result = XCStringsWriter.addTranslationsBatch(
+            to: file,
+            entries: [
+                BatchTranslationEntry(key: "settings.title", translations: ["ja": "更新済み設定"]),
+            ],
+            allowOverwrite: true
+        )
+
+        #expect(result.result.successCount == 1)
+        assertJapaneseSettingsMetadataPreserved(in: result.file, value: "更新済み設定")
+    }
+
+    @Test("updateTranslationsBatch preserves existing localization metadata")
+    func updateTranslationsBatchPreservesLocalizationMetadata() throws {
+        let file = try loadFixture(Self.catalogWithTargetLocalizationMetadata)
+
+        let result = XCStringsWriter.updateTranslationsBatch(
+            in: file,
+            entries: [
+                BatchTranslationEntry(key: "settings.title", translations: ["ja": "更新済み設定"]),
+            ]
+        )
+
+        #expect(result.result.successCount == 1)
+        assertJapaneseSettingsMetadataPreserved(in: result.file, value: "更新済み設定")
     }
 
     @Test("updateTranslations throws for non-existent key")
@@ -416,4 +489,51 @@ struct XCStringsWriterTests {
         let data = content.data(using: .utf8)!
         return try JSONDecoder().decode(XCStringsFile.self, from: data)
     }
+
+    private func assertJapaneseSettingsMetadataPreserved(in file: XCStringsFile, value: String) {
+        let localization = file.strings["settings.title"]?.localizations?["ja"]
+
+        #expect(localization?.stringUnit?.value == value)
+        #expect(localization?.stringUnit?.state == "needs_review")
+        expectStringValue(localization?.unknownFields["localizationNote"], equals: "reviewed-by-l10n")
+        expectStringValue(localization?.unknownFields["vendorStatus"], equals: "approved")
+        expectStringValue(localization?.stringUnit?.unknownFields["reviewStatus"], equals: "approved")
+    }
+
+    private func expectStringValue(_ value: XCStringsRawJSONValue?, equals expected: String) {
+        if case .string(let actual) = value {
+            #expect(actual == expected)
+            return
+        }
+
+        #expect(Bool(false))
+    }
+
+    private static let catalogWithTargetLocalizationMetadata = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "settings.title": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Settings"
+              }
+            },
+            "ja": {
+              "stringUnit": {
+                "state": "needs_review",
+                "value": "古い設定",
+                "reviewStatus": "approved"
+              },
+              "localizationNote": "reviewed-by-l10n",
+              "vendorStatus": "approved"
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
 }

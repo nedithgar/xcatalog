@@ -26,9 +26,7 @@ enum XCStringsWriter {
             result.strings[key]?.localizations = [:]
         }
 
-        result.strings[key]?.localizations?[language] = Localization(
-            stringUnit: StringUnit(state: "translated", value: value)
-        )
+        setPlainLocalization(in: &result, key: key, language: language, value: value)
 
         return result
     }
@@ -57,9 +55,7 @@ enum XCStringsWriter {
                 throw XCStringsError.keyAlreadyExists(key: "\(key):\(language)")
             }
 
-            result.strings[key]?.localizations?[language] = Localization(
-                stringUnit: StringUnit(state: "translated", value: value)
-            )
+            setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
         return result
@@ -84,9 +80,7 @@ enum XCStringsWriter {
             throw XCStringsError.languageNotFound(language: language, key: key)
         }
 
-        result.strings[key]?.localizations?[language] = Localization(
-            stringUnit: StringUnit(state: "translated", value: value)
-        )
+        setPlainLocalization(in: &result, key: key, language: language, value: value)
 
         return result
     }
@@ -110,9 +104,7 @@ enum XCStringsWriter {
                 throw XCStringsError.languageNotFound(language: language, key: key)
             }
 
-            result.strings[key]?.localizations?[language] = Localization(
-                stringUnit: StringUnit(state: "translated", value: value)
-            )
+            setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
         return result
@@ -234,9 +226,7 @@ enum XCStringsWriter {
                         throw XCStringsError.keyAlreadyExists(key: "\(entry.key):\(language)")
                     }
 
-                    candidate.strings[entry.key]?.localizations?[language] = Localization(
-                        stringUnit: StringUnit(state: "translated", value: value)
-                    )
+                    setPlainLocalization(in: &candidate, key: entry.key, language: language, value: value)
                     let finalState = translationSnapshot(in: candidate, key: entry.key, language: language)
                     languageResults.append(
                         BatchWriteLanguageResult(
@@ -305,9 +295,7 @@ enum XCStringsWriter {
                         throw XCStringsError.languageNotFound(language: language, key: entry.key)
                     }
 
-                    candidate.strings[entry.key]?.localizations?[language] = Localization(
-                        stringUnit: StringUnit(state: "translated", value: value)
-                    )
+                    setPlainLocalization(in: &candidate, key: entry.key, language: language, value: value)
                     languageResults.append(
                         BatchWriteLanguageResult(
                             language: language,
@@ -399,6 +387,29 @@ enum XCStringsWriter {
                 diagnostics: validation.diagnostics
             )
         }
+    }
+
+    private static func setPlainLocalization(
+        in file: inout XCStringsFile,
+        key: String,
+        language: String,
+        value: String
+    ) {
+        var entry = file.strings[key] ?? StringEntry(localizations: [:])
+        var localizations = entry.localizations ?? [:]
+        localizations[language] = plainLocalization(from: localizations[language], value: value)
+        entry.localizations = localizations
+        file.strings[key] = entry
+    }
+
+    private static func plainLocalization(from existing: Localization?, value: String) -> Localization {
+        var localization = existing ?? Localization()
+        localization.stringUnit = StringUnit(
+            state: localization.stringUnit?.state ?? "translated",
+            value: value,
+            unknownFields: localization.stringUnit?.unknownFields ?? [:]
+        )
+        return localization
     }
 
     private static func translationSnapshot(
