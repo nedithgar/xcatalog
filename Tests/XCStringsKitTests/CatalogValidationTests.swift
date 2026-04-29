@@ -64,6 +64,19 @@ struct CatalogValidationTests {
         #expect(report.validations.contains { !$0.isValid && $0.sourcePlaceholders.map(\.raw) == ["%arg"] })
     }
 
+    @Test("validatePlaceholders accepts repeated positional dynamic width arguments")
+    func validatePlaceholdersAcceptsRepeatedPositionalDynamicWidthArguments() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithRepeatedPositionalDynamicWidth)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.validatePlaceholders()
+
+        #expect(report.success)
+        #expect(report.summary.checkedTranslations == 1)
+        #expect(report.summary.invalidTranslations == 0)
+    }
+
     @Test("validateCatalog reports malformed rich substitution records")
     func validateCatalogReportsMalformedRichSubstitution() async throws {
         let path = try TestHelper.createTempFile(content: Self.catalogWithMissingSubstitutionDeclaration)
@@ -111,6 +124,19 @@ struct CatalogValidationTests {
         #expect(report.findings.map(\.code).contains("empty_key"))
         #expect(report.findings.map(\.code).contains("format_only_key"))
         #expect(report.findings.map(\.code).contains("punctuation_only_key"))
+    }
+
+    @Test("findSuspiciousKeys reports dynamic printf-only keys")
+    func findSuspiciousKeysReportsDynamicPrintfOnlyKeys() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithDynamicPrintfOnlyKeys)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let report = try await parser.findSuspiciousKeys()
+
+        #expect(report.success)
+        #expect(report.findings.map(\.key) == ["%*.*f", "(%*.*f)"])
+        #expect(report.findings.allSatisfy { $0.code == "format_only_key" })
     }
 
     private static let catalogWithBrokenFormatTranslation = """
@@ -207,6 +233,31 @@ struct CatalogValidationTests {
     }
     """
 
+    private static let catalogWithRepeatedPositionalDynamicWidth = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "sample": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%2$*1$.1f %3$*1$.1f"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%2$*1$.1f %3$*1$.1f"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
     private static let catalogWithMissingSubstitutionDeclaration = """
     {
       "sourceLanguage": "en",
@@ -249,6 +300,18 @@ struct CatalogValidationTests {
             }
           }
         }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithDynamicPrintfOnlyKeys = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "%*.*f": {},
+        "(%*.*f)": {},
+        "Progress %*.*f": {}
       },
       "version": "1.0"
     }

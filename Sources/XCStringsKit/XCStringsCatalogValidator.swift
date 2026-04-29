@@ -881,7 +881,14 @@ package enum XCStringsCatalogValidator {
         from value: String
     ) -> Bool {
         var remainder = value
-        for placeholder in placeholders {
+        let orderedPlaceholders = placeholders.sorted {
+            if $0.raw.count == $1.raw.count {
+                return $0.raw < $1.raw
+            }
+            return $0.raw.count > $1.raw.count
+        }
+
+        for placeholder in orderedPlaceholders {
             remainder = remainder.replacingOccurrences(of: placeholder.raw, with: "")
         }
 

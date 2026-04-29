@@ -21,6 +21,24 @@ struct FormatStringSafetyTests {
         #expect(placeholders.map(\.specifier) == ["lld", "@"])
     }
 
+    @Test("detects dynamic width and precision arguments")
+    func detectsDynamicWidthAndPrecisionArguments() {
+        let placeholders = FormatStringSafety.placeholders(in: "Progress: %*.*f%%")
+
+        #expect(placeholders.map(\.raw) == ["%*", "%.*", "%*.*f"])
+        #expect(placeholders.map(\.position) == [nil, nil, nil])
+        #expect(placeholders.map(\.specifier) == ["*width", "*precision", "f"])
+    }
+
+    @Test("detects positional dynamic width and precision arguments")
+    func detectsPositionalDynamicWidthAndPrecisionArguments() {
+        let placeholders = FormatStringSafety.placeholders(in: "Value: %3$*1$.*2$f")
+
+        #expect(placeholders.map(\.raw) == ["%*1$", "%.*2$", "%3$*1$.*2$f"])
+        #expect(placeholders.map(\.position) == [1, 2, 3])
+        #expect(placeholders.map(\.specifier) == ["*width", "*precision", "f"])
+    }
+
     @Test("detects named positional placeholders from string catalogs")
     func detectsNamedPositionalPlaceholders() {
         let placeholders = FormatStringSafety.placeholders(
@@ -66,6 +84,182 @@ struct FormatStringSafetyTests {
         )
 
         #expect(result.isValid)
+    }
+
+    @Test("allows implicit dynamic width and precision when argument order is preserved")
+    func validatesImplicitDynamicWidthAndPrecision() {
+        let result = FormatStringSafety.validate(
+            key: "sample.progress",
+            language: "es",
+            sourceValue: "Progress: %*.*f%%",
+            targetValue: "Progreso: %*.*f%%"
+        )
+
+        #expect(result.isValid)
+        #expect(result.sourcePlaceholders.map(\.specifier) == ["*width", "*precision", "f"])
+    }
+
+    @Test("allows positional target for implicit dynamic width and precision")
+    func validatesImplicitDynamicWidthAndPrecisionWithPositionalTarget() {
+        let result = FormatStringSafety.validate(
+            key: "sample.progress",
+            language: "es",
+            sourceValue: "Progress: %*.*f%%",
+            targetValue: "Progreso: %3$*1$.*2$f%%"
+        )
+
+        #expect(result.isValid)
+        #expect(result.targetPlaceholders.map(\.position) == [1, 2, 3])
+    }
+
+    @Test("allows explicit positional dynamic width")
+    func validatesExplicitPositionalDynamicWidth() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %2$*1$f",
+            targetValue: "Valor: %2$*1$f"
+        )
+
+        #expect(result.isValid)
+        #expect(result.sourcePlaceholders.map(\.position) == [1, 2])
+        #expect(result.sourcePlaceholders.map(\.specifier) == ["*width", "f"])
+    }
+
+    @Test("allows repeated positional conversions when source and target match")
+    func validatesRepeatedPositionalConversions() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %1$d %1$d",
+            targetValue: "Valor: %1$d %1$d"
+        )
+
+        #expect(result.isValid)
+    }
+
+    @Test("allows repeated positional dynamic width arguments")
+    func validatesRepeatedPositionalDynamicWidthArguments() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Values: %2$*1$f %3$*1$f",
+            targetValue: "Valores: %2$*1$f %3$*1$f"
+        )
+
+        #expect(result.isValid)
+        #expect(result.sourcePlaceholders.map(\.position) == [1, 2, 1, 3])
+    }
+
+    @Test("allows repeated positional dynamic width and precision arguments")
+    func validatesRepeatedPositionalDynamicWidthAndPrecisionArguments() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Values: %2$*1$.*4$f %3$*1$.*4$f",
+            targetValue: "Valores: %2$*1$.*4$f %3$*1$.*4$f"
+        )
+
+        #expect(result.isValid)
+        #expect(result.sourcePlaceholders.map(\.position) == [1, 4, 2, 1, 4, 3])
+    }
+
+    @Test("rejects dropped implicit dynamic width and precision arguments")
+    func rejectsDroppedImplicitDynamicWidthAndPrecision() {
+        let result = FormatStringSafety.validate(
+            key: "sample.progress",
+            language: "es",
+            sourceValue: "Progress: %*.*f%%",
+            targetValue: "Progreso: %f%%"
+        )
+
+        #expect(!result.isValid)
+        #expect(result.diagnostics.joined().contains("*width, *precision, f"))
+    }
+
+    @Test("rejects added repeated positional placeholder")
+    func rejectsAddedRepeatedPositionalPlaceholder() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %1$d",
+            targetValue: "Valor: %1$d %1$d"
+        )
+
+        #expect(!result.isValid)
+        #expect(result.diagnostics.joined().contains("extra occurrences"))
+    }
+
+    @Test("rejects repeated positional placeholder with changed specifier")
+    func rejectsRepeatedPositionalPlaceholderWithChangedSpecifier() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %1$d %1$d",
+            targetValue: "Valor: %1$d %1$x"
+        )
+
+        let diagnostics = result.diagnostics.joined(separator: "\n")
+        #expect(!result.isValid)
+        #expect(diagnostics.contains("missing expected occurrences"))
+        #expect(diagnostics.contains("extra occurrences"))
+    }
+
+    @Test("rejects positional conversion with implicit dynamic width")
+    func rejectsPositionalConversionWithImplicitDynamicWidth() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %2$*f",
+            targetValue: "Valor: %2$*f"
+        )
+
+        let diagnostics = result.diagnostics.joined(separator: "\n")
+        #expect(!result.isValid)
+        #expect(diagnostics.contains("undefined for printf format strings"))
+        #expect(diagnostics.contains("explicit *m$ forms"))
+    }
+
+    @Test("rejects positional conversion with implicit dynamic width and precision")
+    func rejectsPositionalConversionWithImplicitDynamicWidthAndPrecision() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %3$*.*f",
+            targetValue: "Valor: %3$*.*f"
+        )
+
+        let diagnostics = result.diagnostics.joined(separator: "\n")
+        #expect(!result.isValid)
+        #expect(diagnostics.contains("undefined for printf format strings"))
+        #expect(diagnostics.contains("%3$*1$.*2$f"))
+    }
+
+    @Test("allows positional dynamic width and precision when argument identities are preserved")
+    func validatesPositionalDynamicWidthAndPrecision() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %3$*1$.*2$f",
+            targetValue: "Valor: %3$*1$.*2$f"
+        )
+
+        #expect(result.isValid)
+        #expect(result.sourcePlaceholders.map(\.position) == [1, 2, 3])
+    }
+
+    @Test("rejects removed positional dynamic width argument")
+    func rejectsRemovedPositionalDynamicWidthArgument() {
+        let result = FormatStringSafety.validate(
+            key: "sample.value",
+            language: "es",
+            sourceValue: "Value: %2$*1$f",
+            targetValue: "Valor: %1$f"
+        )
+
+        #expect(!result.isValid)
+        #expect(result.diagnostics.joined().contains("Placeholder %1$ changed"))
+        #expect(result.diagnostics.joined().contains("Missing positional placeholders"))
     }
 
     @Test("rejects non-positional placeholder reordering")

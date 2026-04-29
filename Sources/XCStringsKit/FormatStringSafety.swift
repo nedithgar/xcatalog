@@ -141,11 +141,11 @@ package enum FormatStringSafety {
         let targetHasNonPositional = targetPrintf.contains { $0.position == nil }
 
         if sourceHasPositional && sourceHasNonPositional {
-            return ["Source mixes positional and non-positional placeholders, which is ambiguous for validation: \(describe(sourcePrintf))."]
+            return [mixedPositionalDiagnostic(label: "Source", placeholders: sourcePrintf)]
         }
 
         if targetHasPositional && targetHasNonPositional {
-            return ["Target mixes positional and non-positional placeholders, which is unsafe: \(describe(targetPrintf))."]
+            return [mixedPositionalDiagnostic(label: "Target", placeholders: targetPrintf)]
         }
 
         if sourceHasPositional {
@@ -183,7 +183,11 @@ package enum FormatStringSafety {
         target: [FormatPlaceholder]
     ) -> [String] {
         let expected = Dictionary(uniqueKeysWithValues: source.enumerated().map { index, placeholder in
-            (index + 1, PlaceholderIdentity(kind: .printf, position: index + 1, name: nil, specifier: placeholder.specifier))
+            let position = index + 1
+            return (
+                position,
+                [PlaceholderIdentity(kind: .printf, position: position, name: nil, specifier: placeholder.specifier)]
+            )
         })
         let actual = Dictionary(grouping: target, by: { $0.position ?? -1 })
         return compare(expected: expected, actual: actual)
@@ -193,48 +197,71 @@ package enum FormatStringSafety {
         source: [FormatPlaceholder],
         target: [FormatPlaceholder]
     ) -> [String] {
-        let expected = Dictionary(grouping: source, by: { $0.position ?? -1 }).compactMapValues(\.first?.identity)
+        let expected = Dictionary(grouping: source, by: { $0.position ?? -1 })
+            .mapValues { placeholders in
+                placeholders.map(\.identity)
+            }
         let actual = Dictionary(grouping: target, by: { $0.position ?? -1 })
         return compare(expected: expected, actual: actual)
     }
 
     private static func compare(
-        expected: [Int: PlaceholderIdentity],
+        expected: [Int: [PlaceholderIdentity]],
         actual: [Int: [FormatPlaceholder]]
     ) -> [String] {
         var diagnostics: [String] = []
-        let actualIdentities = actual.compactMapValues(\.first?.identity)
+        let actualIdentities = actual.mapValues { placeholders in
+            placeholders.map(\.identity)
+        }
 
-        let missingPositions = expected.keys.filter { actualIdentities[$0] == nil }.sorted()
+        let missingPositions = expected.keys.filter { actualIdentities[$0]?.isEmpty != false }.sorted()
         if !missingPositions.isEmpty {
             diagnostics.append("Missing positional placeholders: \(missingPositions.map { "%\($0)$" }.joined(separator: ", ")).")
         }
 
-        let extraPositions = actualIdentities.keys.filter { expected[$0] == nil }.sorted()
+        let extraPositions = actualIdentities.keys.filter { expected[$0]?.isEmpty != false }.sorted()
         if !extraPositions.isEmpty {
             diagnostics.append("Extra positional placeholders: \(extraPositions.map { "%\($0)$" }.joined(separator: ", ")).")
         }
 
         for position in expected.keys.sorted() {
-            guard let expectedIdentity = expected[position],
-                  let actualIdentity = actualIdentities[position],
-                  expectedIdentity != actualIdentity else {
+            guard let expectedIdentities = expected[position],
+                  let actualIdentitiesForPosition = actualIdentities[position],
+                  !actualIdentitiesForPosition.isEmpty else {
                 continue
             }
 
-            let expectedName = expectedIdentity.name.map { "(\($0))" } ?? ""
-            let actualName = actualIdentity.name.map { "(\($0))" } ?? ""
-            diagnostics.append(
-                "Placeholder %\(position)$ changed from \(expectedName)\(expectedIdentity.specifier) to \(actualName)\(actualIdentity.specifier)."
-            )
-        }
+            if expectedIdentities.count == 1,
+               actualIdentitiesForPosition.count == 1,
+               let expectedIdentity = expectedIdentities.first,
+               let actualIdentity = actualIdentitiesForPosition.first,
+               expectedIdentity != actualIdentity {
+                diagnostics.append(
+                    "Placeholder %\(position)$ changed from \(describe(expectedIdentity)) to \(describe(actualIdentity))."
+                )
+                continue
+            }
 
-        let duplicatePositions = actual
-            .filter { _, placeholders in placeholders.count > 1 }
-            .keys
-            .sorted()
-        if !duplicatePositions.isEmpty {
-            diagnostics.append("Target repeats positional placeholders: \(duplicatePositions.map { "%\($0)$" }.joined(separator: ", ")).")
+            let expectedCounts = countsByIdentity(expectedIdentities)
+            let actualCounts = countsByIdentity(actualIdentitiesForPosition)
+
+            let missingIdentities = expectedCounts.keys.filter { expectedIdentity in
+                (actualCounts[expectedIdentity] ?? 0) < (expectedCounts[expectedIdentity] ?? 0)
+            }.sorted(by: compareIdentities)
+            if !missingIdentities.isEmpty {
+                diagnostics.append(
+                    "Placeholder %\(position)$ is missing expected occurrences: \(describeOccurrences(missingIdentities, expected: expectedCounts, actual: actualCounts))."
+                )
+            }
+
+            let extraIdentities = actualCounts.keys.filter { actualIdentity in
+                (actualCounts[actualIdentity] ?? 0) > (expectedCounts[actualIdentity] ?? 0)
+            }.sorted(by: compareIdentities)
+            if !extraIdentities.isEmpty {
+                diagnostics.append(
+                    "Placeholder %\(position)$ has extra occurrences: \(describeOccurrences(extraIdentities, expected: expectedCounts, actual: actualCounts))."
+                )
+            }
         }
 
         return diagnostics
@@ -246,6 +273,51 @@ package enum FormatStringSafety {
         }
 
         return placeholders.map(\.raw).joined(separator: ", ")
+    }
+
+    private static func countsByIdentity(_ identities: [PlaceholderIdentity]) -> [PlaceholderIdentity: Int] {
+        identities.reduce(into: [:]) { result, identity in
+            result[identity, default: 0] += 1
+        }
+    }
+
+    private static func describeOccurrences(
+        _ identities: [PlaceholderIdentity],
+        expected: [PlaceholderIdentity: Int],
+        actual: [PlaceholderIdentity: Int]
+    ) -> String {
+        identities.map { identity in
+            let expectedCount = expected[identity] ?? 0
+            let actualCount = actual[identity] ?? 0
+            let delta = abs(expectedCount - actualCount)
+            let description = describe(identity)
+            return delta == 1 ? description : "\(description) x\(delta)"
+        }.joined(separator: ", ")
+    }
+
+    private static func describe(_ identity: PlaceholderIdentity) -> String {
+        let name = identity.name.map { "(\($0))" } ?? ""
+        return "\(name)\(identity.specifier)"
+    }
+
+    private static func compareIdentities(_ lhs: PlaceholderIdentity, _ rhs: PlaceholderIdentity) -> Bool {
+        identitySortKey(lhs) < identitySortKey(rhs)
+    }
+
+    private static func identitySortKey(_ identity: PlaceholderIdentity) -> String {
+        [
+            identity.kind.rawValue,
+            identity.position.map(String.init) ?? "",
+            identity.name ?? "",
+            identity.specifier,
+        ].joined(separator: "\u{0}")
+    }
+
+    private static func mixedPositionalDiagnostic(
+        label: String,
+        placeholders: [FormatPlaceholder]
+    ) -> String {
+        "\(label) mixes positional and non-positional printf placeholders, which is undefined for printf format strings. Use fully positional placeholders; dynamic width or precision with positional conversions must use explicit *m$ forms, such as %2$*1$f or %3$*1$.*2$f. Found: \(describe(placeholders))."
     }
 }
 
@@ -284,7 +356,7 @@ private struct FormatPlaceholderScanner {
             }
 
             if let placeholder = scanPrintf(at: index) {
-                result.append(placeholder.placeholder)
+                result.append(contentsOf: placeholder.placeholders)
                 index = placeholder.endIndex
                 continue
             }
@@ -341,12 +413,12 @@ private struct FormatPlaceholderScanner {
         )
     }
 
-    private func scanPrintf(at start: Int) -> (placeholder: FormatPlaceholder, endIndex: Int)? {
+    private func scanPrintf(at start: Int) -> (placeholders: [FormatPlaceholder], endIndex: Int)? {
         var index = start + 1
         let position = scanPosition(&index)
         let name = scanName(&index)
 
-        skipFlagsWidthAndPrecision(&index)
+        var placeholders = scanFlagsWidthAndPrecision(&index)
 
         let length = scanLength(&index)
         guard let conversion = character(at: index), Self.conversionSpecifiers.contains(conversion) else {
@@ -355,14 +427,18 @@ private struct FormatPlaceholderScanner {
 
         let raw = String(characters[start ... index])
         let specifier = length + String(conversion)
-        return (
+        placeholders.append(
             FormatPlaceholder(
                 kind: .printf,
                 raw: raw,
                 position: position,
                 name: name,
                 specifier: specifier
-            ),
+            )
+        )
+
+        return (
+            placeholders,
             index + 1
         )
     }
@@ -402,29 +478,45 @@ private struct FormatPlaceholderScanner {
         return String(characters[start ..< end])
     }
 
-    private func skipFlagsWidthAndPrecision(_ index: inout Int) {
+    private func scanFlagsWidthAndPrecision(_ index: inout Int) -> [FormatPlaceholder] {
         while let character = character(at: index), Self.flagCharacters.contains(character) {
             index += 1
         }
 
-        skipWidthOrPrecisionValue(&index)
+        var placeholders: [FormatPlaceholder] = []
+        if let width = scanWidthOrPrecisionValue(&index, role: .width) {
+            placeholders.append(width)
+        }
 
         if character(at: index) == "." {
             index += 1
-            skipWidthOrPrecisionValue(&index)
+            if let precision = scanWidthOrPrecisionValue(&index, role: .precision) {
+                placeholders.append(precision)
+            }
         }
+
+        return placeholders
     }
 
-    private func skipWidthOrPrecisionValue(_ index: inout Int) {
+    private func scanWidthOrPrecisionValue(_ index: inout Int, role: WidthOrPrecisionRole) -> FormatPlaceholder? {
         if character(at: index) == "*" {
+            let tokenStart = index
             index += 1
-            _ = scanPosition(&index)
-            return
+            let position = scanPosition(&index)
+            let token = String(characters[tokenStart ..< index])
+            return FormatPlaceholder(
+                kind: .printf,
+                raw: "%\(role.rawPrefix)\(token)",
+                position: position,
+                specifier: "*\(role.rawValue)"
+            )
         }
 
         while let character = character(at: index), character.isNumber {
             index += 1
         }
+
+        return nil
     }
 
     private func scanLength(_ index: inout Int) -> String {
@@ -456,4 +548,18 @@ private struct FormatPlaceholderScanner {
     private static let flagCharacters = Set<Character>(["-", "+", " ", "#", "0", "'"])
     private static let lengthModifiers = ["hh", "ll", "l", "h", "q", "L", "z", "t", "j"]
     private static let conversionSpecifiers = Set<Character>(["@","d","D","u","U","x","X","o","O","f","F","e","E","g","G","a","A","c","C","s","S","p"])
+
+    private enum WidthOrPrecisionRole: String {
+        case width
+        case precision
+
+        var rawPrefix: String {
+            switch self {
+            case .width:
+                return ""
+            case .precision:
+                return "."
+            }
+        }
+    }
 }
