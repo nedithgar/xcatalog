@@ -74,7 +74,7 @@ struct XCStringsFileHandler: Sendable {
         do {
             return try XCStringsJSONSerializer.data(for: file, appendTrailingNewline: appendTrailingNewline)
         } catch {
-            throw XCStringsError.writeError(path: path, reason: error.localizedDescription)
+            throw XCStringsError.writeError(path: path, reason: XCStringsError.writeFailureReason(from: error))
         }
     }
 

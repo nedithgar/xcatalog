@@ -13,6 +13,7 @@ package enum XCStringsError: Error, LocalizedError, Sendable {
     case richLocalizationUnsupported(key: String, language: String)
     case concurrentWriteConflict(path: String)
     case writeError(path: String, reason: String)
+    case serializationError(reason: String)
     case invalidJSON(reason: String)
 
     package var errorDescription: String? {
@@ -39,8 +40,23 @@ package enum XCStringsError: Error, LocalizedError, Sendable {
             return "Concurrent write conflict for '\(path)'. Another write is already modifying this catalog; retry the operation or use a batch write."
         case let .writeError(path, reason):
             return "Failed to write file at '\(path)': \(reason)"
+        case let .serializationError(reason):
+            return "Failed to serialize catalog JSON: \(reason)"
         case let .invalidJSON(reason):
             return "Invalid JSON: \(reason)"
+        }
+    }
+
+    package static func writeFailureReason(from error: any Error) -> String {
+        guard let xcstringsError = error as? XCStringsError else {
+            return error.localizedDescription
+        }
+
+        switch xcstringsError {
+        case let .writeError(_, reason):
+            return reason
+        default:
+            return error.localizedDescription
         }
     }
 }

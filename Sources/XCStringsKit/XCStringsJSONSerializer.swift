@@ -8,7 +8,7 @@ enum XCStringsJSONSerializer {
         }
 
         guard let data = text.data(using: .utf8) else {
-            throw XCStringsError.writeError(path: "", reason: "Failed to encode JSON as UTF-8")
+            throw XCStringsError.serializationError(reason: "Failed to encode JSON as UTF-8")
         }
         return data
     }
@@ -267,7 +267,7 @@ enum XCStringsJSONSerializer {
     private static func quoted(_ string: String) throws -> String {
         let data = try JSONEncoder().encode(string)
         guard let text = String(data: data, encoding: .utf8) else {
-            throw XCStringsError.writeError(path: "", reason: "Failed to quote JSON string")
+            throw XCStringsError.serializationError(reason: "Failed to quote JSON string")
         }
         return text
     }

@@ -18,12 +18,22 @@ struct XCStringsKitCoverageTests {
             (.richLocalizationUnsupported(key: "Items", language: "es"), "Cannot add or update plain stringUnit translation for key 'Items' language 'es' because the source or target localization uses variations or substitutions. Use a variation-aware operation instead."),
             (.concurrentWriteConflict(path: "/tmp/File.xcstrings"), "Concurrent write conflict for '/tmp/File.xcstrings'. Another write is already modifying this catalog; retry the operation or use a batch write."),
             (.writeError(path: "/tmp/File.xcstrings", reason: "disk full"), "Failed to write file at '/tmp/File.xcstrings': disk full"),
+            (.serializationError(reason: "Failed to encode JSON as UTF-8"), "Failed to serialize catalog JSON: Failed to encode JSON as UTF-8"),
             (.invalidJSON(reason: "Unexpected token"), "Invalid JSON: Unexpected token"),
         ]
 
         for (error, expected) in cases {
             #expect(error.localizedDescription == expected)
         }
+    }
+
+    @Test("write failure reason unwraps nested write errors")
+    func writeFailureReason() {
+        let nested = XCStringsError.writeError(path: "", reason: "Failed to encode JSON as UTF-8")
+        #expect(XCStringsError.writeFailureReason(from: nested) == "Failed to encode JSON as UTF-8")
+
+        let serialization = XCStringsError.serializationError(reason: "Failed to quote JSON string")
+        #expect(XCStringsError.writeFailureReason(from: serialization) == "Failed to serialize catalog JSON: Failed to quote JSON string")
     }
 
     @Test("CLIResult helpers produce stable payloads")
