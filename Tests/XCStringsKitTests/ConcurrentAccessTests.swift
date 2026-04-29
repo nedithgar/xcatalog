@@ -114,6 +114,75 @@ struct ConcurrentAccessTests {
         }
     }
 
+    @Test("Cancelled queued exclusive access does not run its write operation")
+    func cancelledQueuedExclusiveAccessDoesNotRunWriteOperation() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let lockEntered = AsyncStream<Void>.makeStream()
+        let releaseLock = AsyncStream<Void>.makeStream()
+        let operationProbe = ExclusiveAccessOperationProbe()
+
+        func releaseLockHolder() {
+            releaseLock.continuation.yield(())
+            releaseLock.continuation.finish()
+        }
+
+        let lockHolder = Task {
+            try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+                lockEntered.continuation.yield(())
+                lockEntered.continuation.finish()
+                _ = await Self.waitForSignal(releaseLock.stream)
+            }
+        }
+
+        guard await Self.waitForSignal(lockEntered.stream) else {
+            Issue.record("Timed out waiting for exclusive access holder to start")
+            releaseLockHolder()
+            try await lockHolder.value
+            return
+        }
+
+        let queuedWriter = Task {
+            try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+                await operationProbe.markOperationRan()
+            }
+        }
+
+        guard await Self.waitForQueuedWaiters(path: path, count: 1) else {
+            Issue.record("Timed out waiting for queued exclusive access waiter")
+            queuedWriter.cancel()
+            releaseLockHolder()
+            try? await queuedWriter.value
+            try await lockHolder.value
+            return
+        }
+
+        queuedWriter.cancel()
+
+        guard await Self.waitForQueuedWaiters(path: path, count: 0) else {
+            Issue.record("Timed out waiting for cancelled waiter to leave the queue")
+            releaseLockHolder()
+            try? await queuedWriter.value
+            try await lockHolder.value
+            return
+        }
+
+        do {
+            try await queuedWriter.value
+            Issue.record("Expected queued writer to throw CancellationError")
+        } catch is CancellationError {
+            #expect(await operationProbe.didRun == false)
+        } catch {
+            Issue.record("Expected CancellationError from queued writer, got \(error)")
+        }
+
+        releaseLockHolder()
+        try await lockHolder.value
+
+        try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path, wait: false) {}
+    }
+
     private static func waitForSignal(
         _ stream: AsyncStream<Void>,
         timeoutNanoseconds: UInt64 = 1_000_000_000
@@ -132,5 +201,36 @@ struct ConcurrentAccessTests {
             group.cancelAll()
             return signaled
         }
+    }
+
+    private static func waitForQueuedWaiters(
+        path: String,
+        count expectedCount: Int,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + .nanoseconds(Int(timeoutNanoseconds))
+
+        while ContinuousClock.now < deadline {
+            let queuedCount = await XCStringsFileAccessCoordinator.queuedWaiterCount(for: path)
+            if queuedCount == expectedCount {
+                return true
+            }
+
+            await Task.yield()
+        }
+
+        return await XCStringsFileAccessCoordinator.queuedWaiterCount(for: path) == expectedCount
+    }
+}
+
+private actor ExclusiveAccessOperationProbe {
+    private var operationRan = false
+
+    var didRun: Bool {
+        operationRan
+    }
+
+    func markOperationRan() {
+        operationRan = true
     }
 }
