@@ -290,9 +290,22 @@ enum XCStringsLocaleSupplementer {
                 stringEntry.localizations = [:]
             }
 
-            stringEntry.localizations?[plan.targetLanguage] = Localization(
-                stringUnit: StringUnit(state: "translated", value: entry.proposedValue)
-            )
+            switch entry.action {
+            case .insert:
+                stringEntry.localizations?[plan.targetLanguage] = Localization(
+                    stringUnit: StringUnit(state: "translated", value: entry.proposedValue)
+                )
+            case .update:
+                var localization = stringEntry.localizations?[plan.targetLanguage] ?? Localization()
+                localization.stringUnit = StringUnit(
+                    state: localization.stringUnit?.state ?? "translated",
+                    value: entry.proposedValue,
+                    unknownFields: localization.stringUnit?.unknownFields ?? [:]
+                )
+                stringEntry.localizations?[plan.targetLanguage] = localization
+            case .skip, .unchanged, .unsafe, .failed:
+                break
+            }
             result.strings[entry.key] = stringEntry
         }
 

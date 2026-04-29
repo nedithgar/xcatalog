@@ -355,6 +355,30 @@ struct LocaleSupplementWorkflowTests {
         #expect(hello["ja"]?.value == "やあ")
     }
 
+    @Test("supplementLocale overwrite preserves target localization metadata")
+    func supplementLocaleOverwritePreservesTargetLocalizationMetadata() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithTargetLocalizationMetadata)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let result = try await parser.supplementLocale(
+            language: "ja",
+            translations: ["settings.title": "更新済み設定"],
+            overwrite: true
+        )
+
+        #expect(result.status == .written)
+        #expect(result.counts.updated == 1)
+
+        let file = try XCStringsFileHandler(path: path).load()
+        let localization = try #require(file.strings["settings.title"]?.localizations?["ja"])
+        #expect(localization.stringUnit?.value == "更新済み設定")
+        #expect(localization.stringUnit?.state == "needs_review")
+        expectStringValue(localization.unknownFields["localizationNote"], equals: "reviewed-by-l10n")
+        expectStringValue(localization.unknownFields["vendorStatus"], equals: "approved")
+        expectStringValue(localization.stringUnit?.unknownFields["reviewStatus"], equals: "approved")
+    }
+
     @Test("supplementLocale reports missing keys as failed and preserves the file")
     func supplementLocaleReportsMissingKeysAsFailed() async throws {
         let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
@@ -401,4 +425,41 @@ struct LocaleSupplementWorkflowTests {
             (hash ^ UInt64(byte)) &* UInt64(0x100000001b3)
         }
     }
+
+    private func expectStringValue(_ value: XCStringsRawJSONValue?, equals expected: String) {
+        if case .string(let actual) = value {
+            #expect(actual == expected)
+            return
+        }
+
+        #expect(Bool(false))
+    }
+
+    private static let catalogWithTargetLocalizationMetadata = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "settings.title": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Settings"
+              }
+            },
+            "ja": {
+              "stringUnit": {
+                "state": "needs_review",
+                "value": "古い設定",
+                "reviewStatus": "approved"
+              },
+              "localizationNote": "reviewed-by-l10n",
+              "vendorStatus": "approved"
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
 }

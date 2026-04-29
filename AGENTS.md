@@ -2,6 +2,8 @@
 
 CLI and MCP server for xcstrings (String Catalog) CRUD operations.
 
+## IMPORTANT: **We do not need backward compatibility because this is still in early development.**
+
 ## Build & Test
 
 ```bash
