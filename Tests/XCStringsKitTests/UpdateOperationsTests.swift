@@ -70,4 +70,27 @@ struct UpdateOperationsTests {
         #expect(keyInfo.shouldTranslate == false)
         #expect(keyInfo.translations["ja"]?.value == "BrandName")
     }
+
+    @Test("updateTranslation reports placeholder validations")
+    func updateTranslationReportsPlaceholderValidations() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        try await parser.addTranslation(
+            key: "sample.library.itemAccessibilityLabel",
+            language: "es",
+            value: "Item, %1$@, %2$lld x %3$lld pixels"
+        )
+
+        let result = try await parser.updateTranslation(
+            key: "sample.library.itemAccessibilityLabel",
+            language: "es",
+            value: "Pixels: %2$lld by %3$lld, item %1$@"
+        )
+
+        #expect(result.placeholderValidations.filter(\.checked).count == 1)
+        #expect(result.placeholderValidations.first?.isValid == true)
+        #expect(result.languageResults.first?.placeholderValidation?.checked == true)
+    }
 }

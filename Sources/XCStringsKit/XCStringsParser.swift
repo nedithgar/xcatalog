@@ -206,25 +206,26 @@ package actor XCStringsParser {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
             let previousState = XCStringsWriter.translationSnapshot(in: file, key: key, language: language)
-            let validations = try XCStringsWriter.validateTranslationWrite(
-                for: key,
-                translations: [language: value],
-                in: file
+            let mutation = try XCStringsWriter.addTranslationResult(
+                to: file,
+                key: key,
+                language: language,
+                value: value,
+                allowOverwrite: allowOverwrite
             )
-            let updated = try XCStringsWriter.addTranslation(to: file, key: key, language: language, value: value, allowOverwrite: allowOverwrite)
             let languageResult = Self.writeLanguageResult(
                 key: key,
                 language: language,
                 action: previousState == nil ? .inserted : .updated,
                 previousState: previousState,
-                updatedFile: updated,
-                placeholderValidations: validations
+                updatedFile: mutation.file,
+                placeholderValidations: mutation.placeholderValidations
             )
-            try fileHandler.save(updated)
+            try fileHandler.save(mutation.file)
             return TranslationWriteResult(
                 key: key,
                 languages: [language],
-                placeholderValidations: validations,
+                placeholderValidations: mutation.placeholderValidations,
                 languageResults: [languageResult]
             )
         }
@@ -245,12 +246,12 @@ package actor XCStringsParser {
                     result[language] = snapshot
                 }
             }
-            let validations = try XCStringsWriter.validateTranslationWrite(
-                for: key,
+            let mutation = try XCStringsWriter.addTranslationsResult(
+                to: file,
+                key: key,
                 translations: translations,
-                in: file
+                allowOverwrite: allowOverwrite
             )
-            let updated = try XCStringsWriter.addTranslations(to: file, key: key, translations: translations, allowOverwrite: allowOverwrite)
             let languageResults = languages.map { language in
                 let previousState = previousStates[language]
                 return Self.writeLanguageResult(
@@ -258,15 +259,15 @@ package actor XCStringsParser {
                     language: language,
                     action: previousState == nil ? .inserted : .updated,
                     previousState: previousState,
-                    updatedFile: updated,
-                    placeholderValidations: validations
+                    updatedFile: mutation.file,
+                    placeholderValidations: mutation.placeholderValidations
                 )
             }
-            try fileHandler.save(updated)
+            try fileHandler.save(mutation.file)
             return TranslationWriteResult(
                 key: key,
                 languages: languages,
-                placeholderValidations: validations,
+                placeholderValidations: mutation.placeholderValidations,
                 languageResults: languageResults
             )
         }
@@ -278,25 +279,25 @@ package actor XCStringsParser {
         try await withExclusiveFileAccess { fileHandler in
             let file = try fileHandler.load()
             let previousState = try Self.requireTranslationSnapshot(in: file, key: key, language: language)
-            let validations = try XCStringsWriter.validateTranslationWrite(
-                for: key,
-                translations: [language: value],
-                in: file
+            let mutation = try XCStringsWriter.updateTranslationResult(
+                in: file,
+                key: key,
+                language: language,
+                value: value
             )
-            let updated = try XCStringsWriter.updateTranslation(in: file, key: key, language: language, value: value)
             let languageResult = Self.writeLanguageResult(
                 key: key,
                 language: language,
                 action: .updated,
                 previousState: previousState,
-                updatedFile: updated,
-                placeholderValidations: validations
+                updatedFile: mutation.file,
+                placeholderValidations: mutation.placeholderValidations
             )
-            try fileHandler.save(updated)
+            try fileHandler.save(mutation.file)
             return TranslationWriteResult(
                 key: key,
                 languages: [language],
-                placeholderValidations: validations,
+                placeholderValidations: mutation.placeholderValidations,
                 languageResults: [languageResult]
             )
         }
@@ -316,27 +317,26 @@ package actor XCStringsParser {
                     )
                 }
             )
-            let validations = try XCStringsWriter.validateTranslationWrite(
-                for: key,
-                translations: translations,
-                in: file
+            let mutation = try XCStringsWriter.updateTranslationsResult(
+                in: file,
+                key: key,
+                translations: translations
             )
-            let updated = try XCStringsWriter.updateTranslations(in: file, key: key, translations: translations)
             let languageResults = languages.map { language in
                 Self.writeLanguageResult(
                     key: key,
                     language: language,
                     action: .updated,
                     previousState: previousStates[language],
-                    updatedFile: updated,
-                    placeholderValidations: validations
+                    updatedFile: mutation.file,
+                    placeholderValidations: mutation.placeholderValidations
                 )
             }
-            try fileHandler.save(updated)
+            try fileHandler.save(mutation.file)
             return TranslationWriteResult(
                 key: key,
                 languages: languages,
-                placeholderValidations: validations,
+                placeholderValidations: mutation.placeholderValidations,
                 languageResults: languageResults
             )
         }

@@ -2,6 +2,11 @@ import Foundation
 
 /// Handles write operations for xcstrings files
 enum XCStringsWriter {
+    struct TranslationMutationResult: Sendable {
+        let file: XCStringsFile
+        let placeholderValidations: [PlaceholderValidationResult]
+    }
+
     /// Add a translation for a key
     static func addTranslation(
         to file: XCStringsFile,
@@ -10,9 +15,30 @@ enum XCStringsWriter {
         value: String,
         allowOverwrite: Bool = false
     ) throws -> XCStringsFile {
+        try addTranslationResult(
+            to: file,
+            key: key,
+            language: language,
+            value: value,
+            allowOverwrite: allowOverwrite
+        ).file
+    }
+
+    /// Add a translation for a key and return the validations used for the write.
+    static func addTranslationResult(
+        to file: XCStringsFile,
+        key: String,
+        language: String,
+        value: String,
+        allowOverwrite: Bool = false
+    ) throws -> TranslationMutationResult {
         var result = file
 
-        _ = try validateTranslationWrite(for: key, translations: [language: value], in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: [language: value],
+            in: result
+        )
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -28,7 +54,7 @@ enum XCStringsWriter {
 
         setPlainLocalization(in: &result, key: key, language: language, value: value)
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Add translations for multiple languages
@@ -38,9 +64,28 @@ enum XCStringsWriter {
         translations: [String: String],
         allowOverwrite: Bool = false
     ) throws -> XCStringsFile {
+        try addTranslationsResult(
+            to: file,
+            key: key,
+            translations: translations,
+            allowOverwrite: allowOverwrite
+        ).file
+    }
+
+    /// Add translations for multiple languages and return the validations used for the write.
+    static func addTranslationsResult(
+        to file: XCStringsFile,
+        key: String,
+        translations: [String: String],
+        allowOverwrite: Bool = false
+    ) throws -> TranslationMutationResult {
         var result = file
 
-        _ = try validateTranslationWrite(for: key, translations: translations, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: translations,
+            in: result
+        )
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -58,7 +103,7 @@ enum XCStringsWriter {
             setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Update an existing translation
@@ -68,13 +113,32 @@ enum XCStringsWriter {
         language: String,
         value: String
     ) throws -> XCStringsFile {
+        try updateTranslationResult(
+            in: file,
+            key: key,
+            language: language,
+            value: value
+        ).file
+    }
+
+    /// Update an existing translation and return the validations used for the write.
+    static func updateTranslationResult(
+        in file: XCStringsFile,
+        key: String,
+        language: String,
+        value: String
+    ) throws -> TranslationMutationResult {
         var result = file
 
         guard result.strings[key] != nil else {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        _ = try validateTranslationWrite(for: key, translations: [language: value], in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: [language: value],
+            in: result
+        )
 
         guard result.strings[key]?.localizations?[language] != nil else {
             throw XCStringsError.languageNotFound(language: language, key: key)
@@ -82,7 +146,7 @@ enum XCStringsWriter {
 
         setPlainLocalization(in: &result, key: key, language: language, value: value)
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Update translations for multiple languages
@@ -91,13 +155,26 @@ enum XCStringsWriter {
         key: String,
         translations: [String: String]
     ) throws -> XCStringsFile {
+        try updateTranslationsResult(in: file, key: key, translations: translations).file
+    }
+
+    /// Update translations for multiple languages and return the validations used for the write.
+    static func updateTranslationsResult(
+        in file: XCStringsFile,
+        key: String,
+        translations: [String: String]
+    ) throws -> TranslationMutationResult {
         var result = file
 
         guard result.strings[key] != nil else {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        _ = try validateTranslationWrite(for: key, translations: translations, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: translations,
+            in: result
+        )
 
         for (language, value) in sortedTranslations(translations) {
             guard result.strings[key]?.localizations?[language] != nil else {
@@ -107,7 +184,7 @@ enum XCStringsWriter {
             setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Rename a key

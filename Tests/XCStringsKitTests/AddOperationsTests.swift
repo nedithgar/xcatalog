@@ -120,4 +120,21 @@ struct AddOperationsTests {
         let translation = try await parser.getTranslation(key: "NoTranslation", language: "en")
         #expect(translation["en"]?.value == "Now Localized")
     }
+
+    @Test("addTranslation reports placeholder validations")
+    func addTranslationReportsPlaceholderValidations() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.catalogPersistenceRegression)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let parser = XCStringsParser(path: path)
+        let result = try await parser.addTranslation(
+            key: "sample.library.itemAccessibilityLabel",
+            language: "es",
+            value: "Pixels: %2$lld by %3$lld, item %1$@"
+        )
+
+        #expect(result.placeholderValidations.filter(\.checked).count == 1)
+        #expect(result.placeholderValidations.first?.isValid == true)
+        #expect(result.languageResults.first?.placeholderValidation?.checked == true)
+    }
 }
