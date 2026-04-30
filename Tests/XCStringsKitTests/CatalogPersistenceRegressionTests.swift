@@ -182,21 +182,19 @@ struct CatalogPersistenceRegressionTests {
 
         _ = try await parser.addTranslationsBatch(entries: entries)
 
-        let result = try runProcess(
-            executable: "/usr/bin/xcrun",
-            arguments: [
-                "xcstringstool",
-                "compile",
-                path,
-                "--output-directory",
-                outputDirectory.path,
-                "--language",
-                "es",
-                "--dry-run",
-            ]
-        )
+        let result = XCStringsCatalogCompiler.run([
+            "/usr/bin/xcrun",
+            "xcstringstool",
+            "compile",
+            path,
+            "--output-directory",
+            outputDirectory.path,
+            "--language",
+            "es",
+            "--dry-run",
+        ])
 
-        #expect(result.exitStatus == 0, "xcstringstool failed: \(result.standardError)")
+        #expect(result.exitCode == 0, "xcstringstool failed: \(result.output)")
     }
 
     private func decodeFixture(_ content: String) throws -> XCStringsFile {
@@ -230,35 +228,6 @@ struct CatalogPersistenceRegressionTests {
     }
 
     private func xcstringstoolIsAvailable() -> Bool {
-        (try? runProcess(executable: "/usr/bin/xcrun", arguments: ["--find", "xcstringstool"]).exitStatus) == 0
-    }
-
-    private func runProcess(executable: String, arguments: [String]) throws -> ProcessResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-
-        let output = Pipe()
-        let error = Pipe()
-        process.standardOutput = output
-        process.standardError = error
-
-        try process.run()
-        process.waitUntilExit()
-
-        let outputData = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = error.fileHandleForReading.readDataToEndOfFile()
-
-        return ProcessResult(
-            exitStatus: process.terminationStatus,
-            standardOutput: String(data: outputData, encoding: .utf8) ?? "",
-            standardError: String(data: errorData, encoding: .utf8) ?? ""
-        )
-    }
-
-    private struct ProcessResult {
-        let exitStatus: Int32
-        let standardOutput: String
-        let standardError: String
+        XCStringsCatalogCompiler.run(["/usr/bin/xcrun", "--find", "xcstringstool"]).exitCode == 0
     }
 }
