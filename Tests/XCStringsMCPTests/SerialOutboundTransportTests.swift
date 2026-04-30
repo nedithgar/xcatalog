@@ -10,10 +10,14 @@ struct SerialOutboundTransportTests {
     @Test("send calls do not overlap when the wrapped transport suspends")
     func sendsDoNotOverlapWhenWrappedTransportSuspends() async throws {
         let base = ReentrantRecordingTransport()
+        let sendQueue = SendQueueProbe()
         let transport = SerialOutboundTransport(
             base: base,
             inboundMessages: await base.receive(),
-            logger: base.logger
+            logger: base.logger,
+            sendDidQueue: { id in
+                await sendQueue.recordQueuedSend(id)
+            }
         )
 
         let firstSend = Task {
@@ -23,6 +27,8 @@ struct SerialOutboundTransportTests {
         let secondSend = Task {
             try await transport.send(Data("second".utf8))
         }
+        await sendQueue.waitUntilSendQueued(id: 1)
+        await base.releaseFirstSend()
 
         try await firstSend.value
         try await secondSend.value
@@ -45,6 +51,7 @@ struct SerialOutboundTransportTests {
             try await transport.send(Data("first".utf8))
         }
         await base.waitUntilFirstSendStarts()
+        await base.releaseFirstSend()
 
         await #expect(throws: TestSendError.self) {
             try await firstSend.value
@@ -59,10 +66,14 @@ struct SerialOutboundTransportTests {
     @Test("queued sends proceed after an earlier send fails")
     func queuedSendsProceedAfterEarlierSendFails() async throws {
         let base = FailingThenRecordingTransport()
+        let sendQueue = SendQueueProbe()
         let transport = SerialOutboundTransport(
             base: base,
             inboundMessages: await base.receive(),
-            logger: base.logger
+            logger: base.logger,
+            sendDidQueue: { id in
+                await sendQueue.recordQueuedSend(id)
+            }
         )
 
         let firstSend = Task {
@@ -72,6 +83,8 @@ struct SerialOutboundTransportTests {
         let secondSend = Task {
             try await transport.send(Data("second".utf8))
         }
+        await sendQueue.waitUntilSendQueued(id: 1)
+        await base.releaseFirstSend()
 
         await #expect(throws: TestSendError.self) {
             try await firstSend.value
@@ -90,6 +103,8 @@ private actor ReentrantRecordingTransport: Transport {
     private var messages: [String] = []
     private var firstSendDidStart = false
     private var firstSendStartedContinuation: CheckedContinuation<Void, Never>?
+    private var firstSendCanFinish = false
+    private var firstSendCanFinishContinuation: CheckedContinuation<Void, Never>?
 
     nonisolated let logger = Logger(label: "xcatalog.tests.reentrant-recording-transport")
 
@@ -121,23 +136,45 @@ private actor ReentrantRecordingTransport: Transport {
         }
     }
 
+    func releaseFirstSend() {
+        firstSendCanFinish = true
+        firstSendCanFinishContinuation?.resume()
+        firstSendCanFinishContinuation = nil
+    }
+
     func send(_ data: Data) async throws {
         activeSends += 1
         maximumActiveSends = max(maximumActiveSends, activeSends)
+        let isFirstSend = messages.isEmpty && activeSends == 1
 
-        if !firstSendDidStart {
+        if isFirstSend {
             firstSendDidStart = true
             firstSendStartedContinuation?.resume()
             firstSendStartedContinuation = nil
+
+            await waitUntilFirstSendCanFinish()
         }
 
-        try await Task.sleep(for: .milliseconds(25))
         messages.append(String(decoding: data, as: UTF8.self))
         activeSends -= 1
     }
 
     func snapshot() -> (messages: [String], maximumActiveSends: Int) {
         (messages, maximumActiveSends)
+    }
+
+    private func waitUntilFirstSendCanFinish() async {
+        if firstSendCanFinish {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if firstSendCanFinish {
+                continuation.resume()
+            } else {
+                firstSendCanFinishContinuation = continuation
+            }
+        }
     }
 }
 
@@ -147,6 +184,8 @@ private actor FailingThenRecordingTransport: Transport {
     private var messages: [String] = []
     private var firstSendDidStart = false
     private var firstSendStartedContinuation: CheckedContinuation<Void, Never>?
+    private var firstSendCanFinish = false
+    private var firstSendCanFinishContinuation: CheckedContinuation<Void, Never>?
 
     nonisolated let logger = Logger(label: "xcatalog.tests.failing-then-recording-transport")
 
@@ -178,6 +217,12 @@ private actor FailingThenRecordingTransport: Transport {
         }
     }
 
+    func releaseFirstSend() {
+        firstSendCanFinish = true
+        firstSendCanFinishContinuation?.resume()
+        firstSendCanFinishContinuation = nil
+    }
+
     func send(_ data: Data) async throws {
         attemptCount += 1
 
@@ -188,7 +233,7 @@ private actor FailingThenRecordingTransport: Transport {
                 firstSendStartedContinuation = nil
             }
 
-            try await Task.sleep(for: .milliseconds(25))
+            await waitUntilFirstSendCanFinish()
             throw TestSendError.expectedFailure
         }
 
@@ -197,6 +242,46 @@ private actor FailingThenRecordingTransport: Transport {
 
     func snapshot() -> [String] {
         messages
+    }
+
+    private func waitUntilFirstSendCanFinish() async {
+        if firstSendCanFinish {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if firstSendCanFinish {
+                continuation.resume()
+            } else {
+                firstSendCanFinishContinuation = continuation
+            }
+        }
+    }
+}
+
+private actor SendQueueProbe {
+    private var queuedSendIDs: Set<Int> = []
+    private var continuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+
+    func recordQueuedSend(_ id: Int) {
+        queuedSendIDs.insert(id)
+        continuations.removeValue(forKey: id)?.forEach { continuation in
+            continuation.resume()
+        }
+    }
+
+    func waitUntilSendQueued(id: Int) async {
+        if queuedSendIDs.contains(id) {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if queuedSendIDs.contains(id) {
+                continuation.resume()
+            } else {
+                continuations[id, default: []].append(continuation)
+            }
+        }
     }
 }
 

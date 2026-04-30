@@ -11,6 +11,7 @@ import MCP
 actor SerialOutboundTransport: Transport {
     private let base: any Transport
     private let inboundMessages: AsyncThrowingStream<Data, Swift.Error>
+    private let sendDidQueue: (@Sendable (Int) async -> Void)?
     private var nextSendID = 0
     private var sendTail: (id: Int, task: Task<Void, Swift.Error>)?
 
@@ -19,11 +20,13 @@ actor SerialOutboundTransport: Transport {
     init(
         base: any Transport,
         inboundMessages: AsyncThrowingStream<Data, Swift.Error>,
-        logger: Logger
+        logger: Logger,
+        sendDidQueue: (@Sendable (Int) async -> Void)? = nil
     ) {
         self.base = base
         self.inboundMessages = inboundMessages
         self.logger = logger
+        self.sendDidQueue = sendDidQueue
     }
 
     func connect() async throws {
@@ -56,6 +59,9 @@ actor SerialOutboundTransport: Transport {
         }
 
         sendTail = (id: sendID, task: currentSend)
+        if let sendDidQueue {
+            await sendDidQueue(sendID)
+        }
 
         // Await the underlying task's completion via `.result` so caller
         // cancellation cannot surface a `CancellationError` here while
