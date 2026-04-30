@@ -727,7 +727,7 @@ struct ToolHandlerIntegrationTests {
 
         let responses: [MCPCreateFileResponse] = try await withThrowingTaskGroup(of: MCPCreateFileResponse?.self) { group in
             group.addTask {
-                try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
+                try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) { _ in
                     lockEntered.continuation.yield(())
                     lockEntered.continuation.finish()
                     _ = releaseLock.wait(timeout: .now() + 2)

@@ -34,17 +34,17 @@ package actor XCStringsParser {
     /// Create a new xcstrings file (static version for convenience)
     @discardableResult
     package static func createFile(at path: String, sourceLanguage: String, overwrite: Bool = false) async throws -> Bool {
-        let handler = XCStringsFileHandler(path: path)
-        return try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
-            try handler.create(sourceLanguage: sourceLanguage, overwrite: overwrite)
+        try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) { resolvedPath in
+            let handler = XCStringsFileHandler(path: resolvedPath)
+            return try handler.create(sourceLanguage: sourceLanguage, overwrite: overwrite)
         }
     }
 
     private func withExclusiveFileAccess<T: Sendable>(
         _ operation: @Sendable (XCStringsFileHandler) throws -> T
     ) async throws -> T {
-        try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) {
-            try operation(fileHandler)
+        try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) { resolvedPath in
+            try operation(XCStringsFileHandler(path: resolvedPath))
         }
     }
 

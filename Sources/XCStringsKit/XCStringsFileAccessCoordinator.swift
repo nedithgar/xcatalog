@@ -10,14 +10,14 @@ package enum XCStringsFileAccessCoordinator {
     package static func withExclusiveAccess<T: Sendable>(
         to path: String,
         wait: Bool = true,
-        operation: @Sendable () throws -> T
+        operation: @Sendable (_ resolvedPath: String) throws -> T
     ) async throws -> T {
         let canonicalPath = canonicalPath(path)
         try await XCStringsFileAccessRegistry.shared.acquire(path: canonicalPath, wait: wait)
 
         do {
             try Task.checkCancellation()
-            let result = try operation()
+            let result = try operation(canonicalPath)
             await XCStringsFileAccessRegistry.shared.release(path: canonicalPath)
             return result
         } catch {
@@ -29,14 +29,14 @@ package enum XCStringsFileAccessCoordinator {
     package static func withExclusiveAccess<T: Sendable>(
         to path: String,
         wait: Bool = true,
-        operation: @Sendable () async throws -> T
+        operation: @Sendable (_ resolvedPath: String) async throws -> T
     ) async throws -> T {
         let canonicalPath = canonicalPath(path)
         try await XCStringsFileAccessRegistry.shared.acquire(path: canonicalPath, wait: wait)
 
         do {
             try Task.checkCancellation()
-            let result = try await operation()
+            let result = try await operation(canonicalPath)
             await XCStringsFileAccessRegistry.shared.release(path: canonicalPath)
             return result
         } catch {
@@ -46,12 +46,54 @@ package enum XCStringsFileAccessCoordinator {
     }
 
     package static func canonicalPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.path
+        let url = URL(fileURLWithPath: path)
+        return canonicalURL(for: url).path
     }
 
     package static func queuedWaiterCount(for path: String) async -> Int {
         let canonicalPath = canonicalPath(path)
         return await XCStringsFileAccessRegistry.shared.queuedWaiterCount(path: canonicalPath)
+    }
+
+    private static func canonicalURL(for url: URL) -> URL {
+        let fileManager = FileManager.default
+        var candidate = url
+        var missingComponents: [String] = []
+        var visitedSymlinks: Set<String> = []
+
+        // Create operations may target a file that does not exist yet, so resolve
+        // symlinks through the deepest existing ancestor and then append the rest.
+        while !fileManager.fileExists(atPath: candidate.path) {
+            if let destination = try? fileManager.destinationOfSymbolicLink(atPath: candidate.path) {
+                guard visitedSymlinks.insert(candidate.standardizedFileURL.path).inserted else {
+                    return url.standardizedFileURL
+                }
+                candidate = symlinkDestinationURL(destination, relativeTo: candidate.deletingLastPathComponent())
+                continue
+            }
+
+            let parent = candidate.deletingLastPathComponent()
+            guard parent.path != candidate.path else {
+                return url.standardizedFileURL
+            }
+
+            missingComponents.insert(candidate.lastPathComponent, at: 0)
+            candidate = parent
+        }
+
+        var resolved = candidate.resolvingSymlinksInPath()
+        for component in missingComponents {
+            resolved.appendPathComponent(component)
+        }
+        return resolved.standardizedFileURL
+    }
+
+    private static func symlinkDestinationURL(_ destination: String, relativeTo parent: URL) -> URL {
+        if destination.hasPrefix("/") {
+            URL(fileURLWithPath: destination)
+        } else {
+            parent.appendingPathComponent(destination)
+        }
     }
 }
 
