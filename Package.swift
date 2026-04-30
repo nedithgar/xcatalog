@@ -42,10 +42,15 @@ let package = Package(
             dependencies: ["XCStringsCLI"]
         ),
 
+        .target(
+            name: "XCStringsTestSupport",
+            path: "Tests/XCStringsTestSupport"
+        ),
+
         // テスト
         .testTarget(
             name: "XCStringsKitTests",
-            dependencies: ["XCStringsKit"]
+            dependencies: ["XCStringsKit", "XCStringsTestSupport"]
         ),
         .testTarget(
             name: "XCStringsCLITests",
@@ -59,6 +64,7 @@ let package = Package(
             dependencies: [
                 "XCStringsMCP",
                 "XCStringsKit",
+                "XCStringsTestSupport",
                 .product(name: "MCP", package: "swift-sdk"),
             ]
         ),
