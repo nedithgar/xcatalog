@@ -24,7 +24,12 @@ public struct XCStringsMCPServer {
             await Self.handleToolCall(params)
         }
 
-        let transport = StdioTransport()
+        let stdioTransport = StdioTransport()
+        let transport = SerialOutboundTransport(
+            base: stdioTransport,
+            inboundMessages: await stdioTransport.receive(),
+            logger: stdioTransport.logger
+        )
         try await server.start(transport: transport)
         await server.waitUntilCompleted()
     }
