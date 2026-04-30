@@ -11,7 +11,8 @@ import MCP
 actor SerialOutboundTransport: Transport {
     private let base: any Transport
     private let inboundMessages: AsyncThrowingStream<Data, Swift.Error>
-    private var sendTail: Task<Void, Swift.Error>?
+    private var nextSendID = 0
+    private var sendTail: (id: Int, task: Task<Void, Swift.Error>)?
 
     nonisolated let logger: Logger
 
@@ -38,17 +39,35 @@ actor SerialOutboundTransport: Transport {
     }
 
     func send(_ data: Data) async throws {
-        let previousSend = sendTail
+        let previousSend = sendTail?.task
         let base = self.base
+        let sendID = nextSendID
+        nextSendID += 1
         let currentSend = Task {
             if let previousSend {
-                try await previousSend.value
+                do {
+                    try await previousSend.value
+                } catch {
+                    // A failed predecessor should not poison later sends.
+                }
             }
 
             try await base.send(data)
         }
 
-        sendTail = currentSend
-        try await currentSend.value
+        sendTail = (id: sendID, task: currentSend)
+
+        do {
+            try await currentSend.value
+        } catch {
+            if sendTail?.id == sendID {
+                sendTail = nil
+            }
+            throw error
+        }
+
+        if sendTail?.id == sendID {
+            sendTail = nil
+        }
     }
 }
