@@ -25,9 +25,11 @@ struct XCStringsFileHandler: Sendable {
         do {
             let decoder = JSONDecoder()
             var file = try decoder.decode(XCStringsFile.self, from: data)
-            let keyOrder = try XCStringsJSONKeyOrderScanner.scan(data)
+            let keyOrder = try XCStringsJSONKeyOrderScanner.scan(data, path: path)
             file.apply(keyOrder)
             return file
+        } catch let error as XCStringsError {
+            throw error
         } catch {
             throw XCStringsError.invalidFileFormat(path: path, reason: error.localizedDescription)
         }

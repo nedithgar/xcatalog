@@ -7,9 +7,9 @@ struct XCStringsJSONKeyOrder: Sendable {
 }
 
 enum XCStringsJSONKeyOrderScanner {
-    static func scan(_ data: Data) throws -> XCStringsJSONKeyOrder {
+    static func scan(_ data: Data, path: String) throws -> XCStringsJSONKeyOrder {
         guard let text = String(data: data, encoding: .utf8) else {
-            throw XCStringsError.invalidFileFormat(path: "", reason: "File is not valid UTF-8")
+            throw XCStringsError.invalidFileFormat(path: path, reason: "File is not valid UTF-8")
         }
 
         var scanner = Scanner(text: text)

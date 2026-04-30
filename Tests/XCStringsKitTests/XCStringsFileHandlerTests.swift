@@ -76,6 +76,33 @@ struct XCStringsFileHandlerTests {
         }
     }
 
+    @Test("load reports scanner file format errors once with the real path")
+    func loadReportsScannerFileFormatErrorsOnce() throws {
+        let content = #"{"sourceLanguage":"en","strings":{},"version":"1.0"}"#
+        var data = Data([0xFF, 0xFE])
+        data.append(try #require(content.data(using: .utf16LittleEndian)))
+        let url = try createTempDataFile(bytes: Array(data))
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let handler = XCStringsFileHandler(path: url.path)
+
+        do {
+            _ = try handler.load()
+            Issue.record("Expected load to reject non-UTF-8 key-order scanning input")
+        } catch let error as XCStringsError {
+            guard case let .invalidFileFormat(path, reason) = error else {
+                Issue.record("Expected invalidFileFormat, got \(error)")
+                return
+            }
+
+            #expect(path == url.path)
+            #expect(reason == "File is not valid UTF-8")
+            #expect(error.localizedDescription == "Invalid file format at '\(url.path)': File is not valid UTF-8")
+        } catch {
+            Issue.record("Expected XCStringsError, got \(error)")
+        }
+    }
+
     @Test("load throws invalidFileFormat when path points to a directory")
     func loadDirectoryPath() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("xcatalog_dir_\(UUID().uuidString)")
