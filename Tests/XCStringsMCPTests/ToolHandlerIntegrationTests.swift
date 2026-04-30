@@ -8,6 +8,165 @@ import Testing
 @Suite("Tool handler integration tests")
 struct ToolHandlerIntegrationTests {
 
+    // MARK: - Health Handler
+
+    @Test("HealthHandler returns public runtime metadata by default")
+    func healthHandler() async throws {
+        let handler = HealthHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [:]))
+
+        let result = try await handler.execute(with: context)
+        let health = try decodeJSON(result, as: HealthInfo.self)
+
+        #expect(health.version == XCStringsMCPMetadata.version)
+        #expect(health.serverName == XCStringsMCPMetadata.serverName)
+        #expect(health.toolSchemaVersion == XCStringsMCPMetadata.toolSchemaVersion)
+        #expect(health.binaryPath == nil)
+        #expect(health.currentWorkingDirectory == nil)
+        #expect(health.allowedRoots == nil)
+        #expect(!result.contains("binaryPath"))
+        #expect(!result.contains("currentWorkingDirectory"))
+        #expect(!result.contains("allowedRoots"))
+    }
+
+    @Test("HealthInfo omits sensitive local paths by default")
+    func healthInfoOmitsSensitiveLocalPathsByDefault() {
+        let health = HealthInfo.current(
+            environment: [
+                "XCATALOG_GIT_COMMIT": "abc1234",
+                "XCATALOG_BUILD_CONFIGURATION": "debug",
+                "XCATALOG_BUILD_DATE": "2026-04-28T00:00:00Z",
+                "XCATALOG_ALLOWED_ROOTS": "/tmp/one,/tmp/two:/tmp/three",
+                "XCATALOG_HEALTH_INCLUDE_SENSITIVE": "true",
+            ],
+            currentDirectoryPath: "/tmp/work",
+            executablePath: "/tmp/work/.build/debug/xcatalog"
+        )
+
+        #expect(health.gitCommit == "abc1234")
+        #expect(health.buildConfiguration == "debug")
+        #expect(health.buildDate == "2026-04-28T00:00:00Z")
+        #expect(health.currentWorkingDirectory == nil)
+        #expect(health.binaryPath == nil)
+        #expect(health.allowedRoots == nil)
+    }
+
+    @Test("HealthInfo reports git commit only from explicit build metadata")
+    func healthInfoReportsGitCommitOnlyFromExplicitBuildMetadata() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xcatalog-client-workspace-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workspaceURL) }
+
+        _ = try runGit(["init"], in: workspaceURL)
+        try "client workspace\n".write(
+            to: workspaceURL.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        _ = try runGit(["add", "README.md"], in: workspaceURL)
+        _ = try runGit([
+            "-c", "user.name=xcatalog Test",
+            "-c", "user.email=xcatalog@example.invalid",
+            "-c", "commit.gpgSign=true",
+            "-c", "gpg.format=openpgp",
+            "-c", "gpg.program=/usr/bin/false",
+            "commit", "--no-gpg-sign", "-m", "Initial commit",
+        ], in: workspaceURL)
+        let workspaceCommit = try runGit(["rev-parse", "--short", "HEAD"], in: workspaceURL)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(!workspaceCommit.isEmpty)
+
+        let healthWithoutBuildMetadata = HealthInfo.current(
+            environment: [:],
+            currentDirectoryPath: workspaceURL.path,
+            executablePath: "/tmp/xcatalog"
+        )
+        #expect(healthWithoutBuildMetadata.gitCommit == nil)
+
+        let healthWithBuildMetadata = HealthInfo.current(
+            environment: ["XCATALOG_GIT_COMMIT": " xcatalog123 "],
+            currentDirectoryPath: workspaceURL.path,
+            executablePath: "/tmp/xcatalog"
+        )
+        #expect(healthWithBuildMetadata.gitCommit == "xcatalog123")
+    }
+
+    @Test("HealthInfo requires request and environment opt-in for sensitive local paths")
+    func healthInfoRequiresRequestAndEnvironmentOptInForSensitiveLocalPaths() {
+        let environment = [
+            "XCATALOG_GIT_COMMIT": "abc1234",
+            "XCATALOG_BUILD_CONFIGURATION": "debug",
+            "XCATALOG_BUILD_DATE": "2026-04-28T00:00:00Z",
+            "XCATALOG_ALLOWED_ROOTS": "/tmp/one,/tmp/two:/tmp/three",
+            "XCATALOG_HEALTH_INCLUDE_SENSITIVE": "true",
+        ]
+
+        let health = HealthInfo.current(
+            includeSensitivePaths: true,
+            environment: environment,
+            currentDirectoryPath: "/tmp/work",
+            executablePath: "/tmp/work/.build/debug/xcatalog"
+        )
+
+        #expect(health.currentWorkingDirectory == "/tmp/work")
+        #expect(health.binaryPath == "/tmp/work/.build/debug/xcatalog")
+        #expect(health.allowedRoots == ["/tmp/one", "/tmp/two", "/tmp/three"])
+
+        let blockedHealth = HealthInfo.current(
+            includeSensitivePaths: true,
+            environment: environment.filter { $0.key != "XCATALOG_HEALTH_INCLUDE_SENSITIVE" },
+            currentDirectoryPath: "/tmp/work",
+            executablePath: "/tmp/work/.build/debug/xcatalog"
+        )
+
+        #expect(blockedHealth.currentWorkingDirectory == nil)
+        #expect(blockedHealth.binaryPath == nil)
+        #expect(blockedHealth.allowedRoots == nil)
+    }
+
+    private func runGit(_ arguments: [String], in directory: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = directory
+        process.arguments = arguments
+
+        let output = Pipe()
+        let error = Pipe()
+        process.standardOutput = output
+        process.standardError = error
+
+        try process.run()
+        process.waitUntilExit()
+
+        let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        let outputText = String(data: outputData, encoding: .utf8) ?? ""
+        let errorText = String(data: errorData, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            throw GitCommandError(
+                arguments: arguments,
+                status: process.terminationStatus,
+                output: outputText,
+                error: errorText
+            )
+        }
+
+        return outputText
+    }
+
+    private struct GitCommandError: Error, CustomStringConvertible {
+        let arguments: [String]
+        let status: Int32
+        let output: String
+        let error: String
+
+        var description: String {
+            "git \(arguments.joined(separator: " ")) failed with status \(status): \(output)\(error)"
+        }
+    }
+
     // MARK: - List Handlers
 
     @Test("ListKeysHandler returns all keys")
@@ -111,6 +270,125 @@ struct ToolHandlerIntegrationTests {
         #expect(result.contains("note"))
     }
 
+    @Test("PreflightLocaleHandler classifies target locale work")
+    func preflightLocaleHandler() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.preflightMixedCatalog)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = PreflightLocaleHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "language": .string("es")
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: PreflightLocaleReport.self)
+
+        #expect(report.summary.safeToBatchAddKeys == ["plain.missing", "stale.missing"])
+        #expect(report.summary.formatStringKeysRequiringValidation == ["format.missing"])
+        #expect(report.summary.richKeysRequiringSpecialHandling == ["substitution.missing", "variation.missing"])
+        #expect(report.unsafeToWriteKeys.map(\.key) == ["brand.name", "substitution.missing", "variation.missing"])
+    }
+
+    @Test("PreflightLocaleHandler returns compact planning summary")
+    func preflightLocaleHandlerCompact() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.preflightMixedCatalog)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = PreflightLocaleHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "language": .string("es"),
+            "compact": .bool(true),
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: PreflightCompactReport.self)
+
+        #expect(report.summary.missingSimpleKeys == 2)
+        #expect(report.summary.missingFormatKeys == 1)
+        #expect(report.summary.missingRichKeys == 2)
+        #expect(report.safeKeys == ["plain.missing", "stale.missing"])
+        #expect(report.formatSensitiveKeys == ["format.missing"])
+        #expect(report.richOrUnsafeKeys == ["brand.name", "substitution.missing", "variation.missing"])
+    }
+
+    @Test("ValidateCatalogHandler returns structured catalog report")
+    func validateCatalogHandler() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.preflightMixedCatalog)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = ValidateCatalogHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: CatalogValidationReport.self)
+
+        #expect(report.success)
+        #expect(report.jsonParseable)
+        #expect(report.modelDecodable)
+        #expect(report.richRecordReport?.richLocalizationCount == 2)
+    }
+
+    @Test("ValidateCatalogHandler returns compact validation summary")
+    func validateCatalogHandlerCompact() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithBrokenFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = ValidateCatalogHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "compact": .bool(true),
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: CatalogValidationCompactReport.self)
+
+        #expect(report.success == false)
+        #expect(report.summary.invalidPlaceholderValidationCount == 1)
+        #expect(report.summary.errorCount == 1)
+        #expect(report.compileValidationStatus == .notRequested)
+        #expect(report.issues.map(\.code) == ["placeholder_mismatch"])
+        #expect(report.issues.first?.key == "format.bad")
+    }
+
+    @Test("ValidatePlaceholdersHandler reports invalid translated placeholders")
+    func validatePlaceholdersHandler() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithBrokenFormatTranslation)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = ValidatePlaceholdersHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: PlaceholderValidationReport.self)
+
+        #expect(!report.success)
+        #expect(report.summary.invalidTranslations == 1)
+        #expect(report.issues.first?.code == "placeholder_mismatch")
+    }
+
+    @Test("FindSuspiciousKeysHandler reports accidental keys")
+    func findSuspiciousKeysHandler() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogWithSuspiciousKeys)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = FindSuspiciousKeysHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let report = try decodeJSON(result, as: SuspiciousKeysReport.self)
+
+        #expect(!report.success)
+        #expect(report.findings.map(\.key) == ["", "(%@)", "/"])
+    }
+
     // MARK: - Get Handlers
 
     @Test("GetSourceLanguageHandler returns source language")
@@ -124,7 +402,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "ja")
+        let sourceLanguage = try decodeJSON(result, as: String.self)
+        #expect(sourceLanguage == "ja")
     }
 
     @Test("GetKeyHandler returns translations for key")
@@ -241,7 +520,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "true")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(exists)
     }
 
     @Test("CheckKeyHandler returns false for non-existing key")
@@ -256,7 +536,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     @Test("CheckKeyHandler uses actual localizations for non-translatable keys")
@@ -272,7 +553,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     @Test("CheckKeyHandler treats empty localization shells as missing")
@@ -306,7 +588,8 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result == "false")
+        let exists = try decodeJSON(result, as: Bool.self)
+        #expect(!exists)
     }
 
     // MARK: - Stats Handlers
@@ -404,8 +687,90 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("Created"))
+        let response = try decodeJSON(result, as: MCPCreateFileResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.sourceLanguage == "ja")
+        #expect(response.overwrote == false)
         #expect(FileManager.default.fileExists(atPath: path))
+    }
+
+    @Test("CreateFileHandler reports overwritten file")
+    func createFileHandlerReportsOverwrite() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = CreateFileHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "sourceLanguage": .string("fr"),
+            "overwrite": .bool(true)
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPCreateFileResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.sourceLanguage == "fr")
+        #expect(response.overwrote)
+    }
+
+    @Test("CreateFileHandler reports overwrite status from serialized create")
+    func createFileHandlerConcurrentOverwriteStatus() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let path = tempDir.appendingPathComponent("create_concurrent_\(UUID().uuidString).xcstrings").path
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let lockEntered = AsyncStream<Void>.makeStream()
+        let releaseLock = DispatchSemaphore(value: 0)
+        let requestedLanguages = ["ja", "fr", "de", "es"]
+
+        let responses: [MCPCreateFileResponse] = try await withThrowingTaskGroup(of: MCPCreateFileResponse?.self) { group in
+            group.addTask {
+                try await XCStringsFileAccessCoordinator.withExclusiveAccess(to: path) { _ in
+                    lockEntered.continuation.yield(())
+                    lockEntered.continuation.finish()
+                    _ = releaseLock.wait(timeout: .now() + 2)
+                }
+                return nil
+            }
+
+            guard await Self.waitForSignal(lockEntered.stream) else {
+                Issue.record("Timed out waiting for exclusive create lock")
+                releaseLock.signal()
+                try await group.waitForAll()
+                return []
+            }
+
+            for language in requestedLanguages {
+                group.addTask {
+                    let handler = CreateFileHandler()
+                    let context = ToolContext(arguments: ToolArguments(raw: [
+                        "file": .string(path),
+                        "sourceLanguage": .string(language),
+                        "overwrite": .bool(true),
+                    ]))
+                    let result = try await handler.execute(with: context)
+                    return try JSONDecoder().decode(MCPCreateFileResponse.self, from: Data(result.utf8))
+                }
+            }
+
+            try await Task.sleep(nanoseconds: 100_000_000)
+            releaseLock.signal()
+
+            var responses: [MCPCreateFileResponse] = []
+            for try await response in group {
+                if let response {
+                    responses.append(response)
+                }
+            }
+            return responses
+        }
+
+        #expect(responses.count == requestedLanguages.count)
+        #expect(responses.filter { !$0.overwrote }.count == 1)
+        #expect(responses.filter { $0.overwrote }.count == requestedLanguages.count - 1)
+        #expect(Set(responses.map { $0.sourceLanguage }) == Set(requestedLanguages))
     }
 
     // MARK: - Write Handlers
@@ -424,12 +789,51 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successfully"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.operationType == .addTranslation)
+        #expect(response.key == "NewKey")
+        #expect(response.languages == ["ja"])
+        #expect(response.fileChanged)
+        #expect(response.insertedCount == 1)
+        #expect(response.updatedCount == 0)
+        #expect(response.entries.count == 1)
+        #expect(response.entries[0].action == .inserted)
+        #expect(response.entries[0].previousState == nil)
+        #expect(response.entries[0].finalState?.value == "新しいキー")
 
         // Verify the translation was added
         let parser = XCStringsParser(path: path)
         let translation = try await parser.getTranslation(key: "NewKey", language: "ja")
         #expect(translation["ja"]?.value == "新しいキー")
+    }
+
+    @Test("AddTranslationsHandler returns structured response for multiple languages")
+    func addTranslationsHandler() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = AddTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("Goodbye"),
+            "translations": .object([
+                "de": .string("Auf Wiedersehen"),
+                "ja": .string("さようなら"),
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(response.success)
+        #expect(response.operationType == .addTranslations)
+        #expect(response.key == "Goodbye")
+        #expect(response.languages == ["de", "ja"])
+        #expect(response.insertedCount == 2)
+        #expect(response.entries.allSatisfy { $0.action == .inserted && $0.previousState == nil })
+        #expect(response.entries.first { $0.language == "ja" }?.finalState?.value == "さようなら")
     }
 
     @Test("UpdateTranslationHandler updates translation")
@@ -446,12 +850,100 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successfully"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.file == path)
+        #expect(response.operationType == .updateTranslation)
+        #expect(response.key == "Hello")
+        #expect(response.languages == ["en"])
+        #expect(response.fileChanged)
+        #expect(response.insertedCount == 0)
+        #expect(response.updatedCount == 1)
+        #expect(response.entries[0].action == .updated)
+        #expect(response.entries[0].previousState?.value == "Hello")
+        #expect(response.entries[0].finalState?.value == "Hi there")
 
         // Verify the translation was updated
         let parser = XCStringsParser(path: path)
         let translation = try await parser.getTranslation(key: "Hello", language: "en")
         #expect(translation["en"]?.value == "Hi there")
+    }
+
+    @Test("UpdateTranslationHandler reports serialized state transitions for concurrent writes")
+    func updateTranslationHandlerConcurrentSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let requestedValues = (0..<8).map { "Concurrent update \($0)" }
+        let responses = try await withThrowingTaskGroup(of: MCPWriteResponse.self) { group in
+            for value in requestedValues {
+                group.addTask {
+                    let handler = UpdateTranslationHandler()
+                    let context = ToolContext(arguments: ToolArguments(raw: [
+                        "file": .string(path),
+                        "key": .string("Hello"),
+                        "language": .string("en"),
+                        "value": .string(value)
+                    ]))
+                    let result = try await handler.execute(with: context)
+                    return try JSONDecoder().decode(MCPWriteResponse.self, from: Data(result.utf8))
+                }
+            }
+
+            var responses: [MCPWriteResponse] = []
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses
+        }
+
+        let entries = try responses.map { response in
+            try #require(response.entries.first)
+        }
+        let finalValues = entries.compactMap(\.finalState?.value)
+        let previousValues = entries.compactMap(\.previousState?.value)
+        let requestedValueSet = Set(requestedValues)
+
+        #expect(responses.count == requestedValues.count)
+        #expect(entries.allSatisfy { $0.action == .updated })
+        #expect(Set(finalValues) == requestedValueSet)
+        #expect(previousValues.count == requestedValues.count)
+        #expect(previousValues.filter { $0 == "Hello" }.count == 1)
+        #expect(Set(previousValues).count == requestedValues.count)
+        #expect(Set(previousValues.filter { $0 != "Hello" }).isSubset(of: requestedValueSet))
+
+        let parser = XCStringsParser(path: path)
+        let translation = try await parser.getTranslation(key: "Hello", language: "en")
+        let finalCatalogValue = try #require(translation["en"]?.value)
+        #expect(requestedValueSet.contains(finalCatalogValue))
+    }
+
+    @Test("UpdateTranslationsHandler returns structured response for multiple languages")
+    func updateTranslationsHandler() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeyMultipleLangs)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = UpdateTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "key": .string("Hello"),
+            "translations": .object([
+                "de": .string("Guten Tag"),
+                "ja": .string("やあ"),
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(response.success)
+        #expect(response.operationType == .updateTranslations)
+        #expect(response.languages == ["de", "ja"])
+        #expect(response.updatedCount == 2)
+        #expect(response.entries.first { $0.language == "de" }?.previousState?.value == "Hallo")
+        #expect(response.entries.first { $0.language == "de" }?.finalState?.value == "Guten Tag")
+        #expect(response.entries.first { $0.language == "ja" }?.previousState?.value == "こんにちは")
+        #expect(response.entries.first { $0.language == "ja" }?.finalState?.value == "やあ")
     }
 
     @Test("RenameKeyHandler renames key")
@@ -467,7 +959,13 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successfully"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.operationType == .renameKey)
+        #expect(response.fileChanged)
+        #expect(response.renamedCount == 1)
+        #expect(response.entries[0].previousKey == "Hello")
+        #expect(response.entries[0].finalKey == "Greeting")
 
         // Verify the key was renamed
         let parser = XCStringsParser(path: path)
@@ -491,7 +989,13 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successfully"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.operationType == .deleteKey)
+        #expect(response.fileChanged)
+        #expect(response.deletedCount == 1)
+        #expect(response.entries[0].key == "Hello")
+        #expect(response.entries[0].action == .deleted)
 
         // Verify the key was deleted
         let parser = XCStringsParser(path: path)
@@ -512,7 +1016,14 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successfully"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.operationType == .deleteTranslation)
+        #expect(response.fileChanged)
+        #expect(response.deletedCount == 1)
+        #expect(response.languages == ["ja"])
+        #expect(response.entries[0].previousState?.value == "こんにちは")
+        #expect(response.entries[0].finalState == nil)
 
         // Verify the translation was deleted
         let parser = XCStringsParser(path: path)
@@ -565,14 +1076,327 @@ struct ToolHandlerIntegrationTests {
         ]))
 
         let result = try await handler.execute(with: context)
-        #expect(result.contains("successCount"))
-        #expect(result.contains("2"))
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+        #expect(response.success)
+        #expect(response.operationType == .batchAddTranslations)
+        #expect(response.file == path)
+        #expect(response.languages == ["en", "ja"])
+        #expect(response.fileChanged)
+        #expect(response.insertedCount == 3)
+        #expect(response.batchResult?.successCount == 2)
+        #expect(response.entries.contains { $0.key == "Hello" && $0.language == "ja" && $0.action == .inserted })
+        #expect(response.entries.contains { $0.key == "Goodbye" && $0.language == "ja" && $0.action == .inserted })
 
         // Verify translations were added
         let parser = XCStringsParser(path: path)
         let keys = try await parser.listKeys()
         #expect(keys.contains("Hello"))
         #expect(keys.contains("Goodbye"))
+    }
+
+    @Test("BatchAddTranslationsHandler preserves duplicate mixed outcome entries")
+    func batchAddTranslationsHandlerDuplicateMixedOutcomes() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchAddTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "entries": .array([
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("First value")
+                    ])
+                ]),
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("Second value")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(!response.success)
+        #expect(response.insertedCount == 1)
+        #expect(response.failedCount == 1)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.key) == ["NewKey", "NewKey"])
+        #expect(response.entries.map(\.action) == [.inserted, .failed])
+        #expect(response.entries[1].diagnostics.first?.contains("Key already exists") == true)
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(batchResult.entryResults.map(\.status) == [.succeeded, .failed])
+    }
+
+    @Test("BatchAddTranslationsHandler reports per-entry state for duplicate overwrites")
+    func batchAddTranslationsHandlerDuplicateOverwriteStateSnapshots() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.empty)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchAddTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "overwrite": .bool(true),
+            "entries": .array([
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("First value")
+                    ])
+                ]),
+                .object([
+                    "key": .string("NewKey"),
+                    "translations": .object([
+                        "en": .string("Second value")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(response.success)
+        #expect(response.insertedCount == 1)
+        #expect(response.updatedCount == 1)
+        #expect(response.failedCount == 0)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.action) == [.inserted, .updated])
+        #expect(response.entries[0].previousState == nil)
+        #expect(response.entries[0].finalState?.value == "First value")
+        #expect(response.entries[1].previousState?.value == "First value")
+        #expect(response.entries[1].finalState?.value == "Second value")
+
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults[0].languageResults.first?.finalState?.value == "First value")
+        #expect(batchResult.entryResults[1].languageResults.first?.previousState?.value == "First value")
+    }
+
+    @Test("BatchUpdateTranslationsHandler preserves duplicate failed entries")
+    func batchUpdateTranslationsHandlerDuplicateFailures() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.singleKeySingleLang)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = BatchUpdateTranslationsHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "entries": .array([
+                .object([
+                    "key": .string("MissingKey"),
+                    "translations": .object([
+                        "ja": .string("Value A")
+                    ])
+                ]),
+                .object([
+                    "key": .string("MissingKey"),
+                    "translations": .object([
+                        "fr": .string("Value B")
+                    ])
+                ])
+            ])
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let response = try decodeJSON(result, as: MCPWriteResponse.self)
+
+        #expect(!response.success)
+        #expect(response.failedCount == 2)
+        #expect(response.entries.compactMap(\.inputIndex) == [0, 1])
+        #expect(response.entries.map(\.key) == ["MissingKey", "MissingKey"])
+        #expect(response.entries.allSatisfy { $0.action == .failed })
+        let batchResult = try #require(response.batchResult)
+        #expect(batchResult.entryResults.map(\.inputIndex) == [0, 1])
+        #expect(batchResult.entryResults.map(\.status) == [.failed, .failed])
+    }
+
+    @Test("SupplementLocaleHandler returns atomic supplement result")
+    func supplementLocaleHandler() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.multipleKeysPartialTranslations)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = SupplementLocaleHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "language": .string("ja"),
+            "translations": .object([
+                "Goodbye": .string("さようなら"),
+                "Hello": .string("こんにちは"),
+            ]),
+            "dryRun": .bool(true),
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let supplement = try decodeJSON(result, as: LocaleSupplementResult.self)
+
+        #expect(supplement.status == .dryRun)
+        #expect(supplement.success)
+        #expect(supplement.fileChanged == false)
+        #expect(supplement.wouldWrite)
+        #expect(supplement.compileValidationRanOnProjectedCatalog == false)
+        #expect(supplement.counts.inserted == 1)
+        #expect(supplement.counts.unchanged == 1)
+    }
+
+    @Test("SupplementLocaleHandler skips dry-run compile validation for blocked atomic plans")
+    func supplementLocaleHandlerDryRunCompileValidationSkipsBlockedPlan() async throws {
+        let path = try TestHelper.createTempFile(content: Self.catalogForSupplementBlocking)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = SupplementLocaleHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "language": .string("es"),
+            "translations": .object([
+                "sample.action.import": .string("Importar"),
+                "sample.library.itemAccessibilityLabel": .string("Elemento sin dimensiones"),
+            ]),
+            "dryRun": .bool(true),
+            "validateCompile": .bool(true),
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let supplement = try decodeJSON(result, as: LocaleSupplementResult.self)
+
+        #expect(supplement.status == .dryRun)
+        #expect(supplement.success == false)
+        #expect(supplement.fileChanged == false)
+        #expect(supplement.wouldWrite == false)
+        #expect(supplement.counts.inserted == 1)
+        #expect(supplement.counts.unsafe == 1)
+        #expect(supplement.compileValidation.status == .notRunDueToBlockingDiagnostics)
+        #expect(supplement.compileValidationRanOnProjectedCatalog == false)
+    }
+
+    @Test("SupplementLocaleHandler returns compact supplement summary")
+    func supplementLocaleHandlerCompact() async throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.multipleKeysPartialTranslations)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = SupplementLocaleHandler()
+        let context = ToolContext(arguments: ToolArguments(raw: [
+            "file": .string(path),
+            "language": .string("ja"),
+            "translations": .object([
+                "Goodbye": .string("さようなら"),
+                "Hello": .string("こんにちは"),
+            ]),
+            "dryRun": .bool(true),
+            "compact": .bool(true),
+        ]))
+
+        let result = try await handler.execute(with: context)
+        let supplement = try decodeJSON(result, as: LocaleSupplementCompactResult.self)
+
+        #expect(supplement.status == .dryRun)
+        #expect(supplement.fileChanged == false)
+        #expect(supplement.wouldWrite)
+        #expect(supplement.compileValidationRanOnProjectedCatalog == false)
+        #expect(supplement.counts.inserted == 1)
+        #expect(supplement.counts.unchanged == 1)
+        #expect(supplement.placeholderValidation.checked == 0)
+        #expect(supplement.compileValidationStatus == .notRequested)
+        #expect(supplement.remainingUntranslatedCount == 0)
+    }
+
+    private static let catalogForSupplementBlocking = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "sample.action.import": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Import"
+              }
+            }
+          }
+        },
+        "sample.library.itemAccessibilityLabel": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Item, %1$@, %2$lld by %3$lld pixels"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithBrokenFormatTranslation = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "format.bad": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Item %@ has %lld matches"
+              }
+            },
+            "es": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Elemento %@"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static let catalogWithSuspiciousKeys = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "": {},
+        "(%@)": {},
+        "/": {},
+        "normal.key": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Normal"
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
+    private static func waitForSignal(
+        _ stream: AsyncStream<Void>,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                var iterator = stream.makeAsyncIterator()
+                return await iterator.next() != nil
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return false
+            }
+
+            let signaled = await group.next() ?? false
+            group.cancelAll()
+            return signaled
+        }
     }
 
     private func decodeJSON<T: Decodable>(_ string: String, as type: T.Type) throws -> T {

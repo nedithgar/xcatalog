@@ -55,14 +55,19 @@ extension UpdateCommand {
         func run() async throws {
             let parser = XCStringsParser(path: file)
             let result: CLIResult
+            let writeResult: TranslationWriteResult
 
             if !translations.isEmpty {
                 let translationsDict = try TranslationParser.parse(translations)
-                try await parser.updateTranslations(key: key, translations: translationsDict)
-                result = .success(message: "Translations updated successfully for \(translationsDict.count) languages")
+                writeResult = try await parser.updateTranslations(key: key, translations: translationsDict)
+                result = .success(
+                    message: "Translations updated successfully for \(translationsDict.count) languages. Placeholder validation: \(writeResult.placeholderValidationSummary)"
+                )
             } else if let lang = lang, let value = value {
-                try await parser.updateTranslation(key: key, language: lang, value: value)
-                result = .success(message: "Translation updated successfully")
+                writeResult = try await parser.updateTranslation(key: key, language: lang, value: value)
+                result = .success(
+                    message: "Translation updated successfully. Placeholder validation: \(writeResult.placeholderValidationSummary)"
+                )
             } else {
                 return
             }

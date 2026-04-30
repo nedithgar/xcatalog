@@ -5,7 +5,7 @@ import XCStringsKit
 // MARK: - Add Translation Handler
 
 struct AddTranslationHandler: ToolHandler {
-    static let toolName = "xcstrings_add_translation"
+    static let toolName = "xcatalog_add_translation"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -14,15 +14,25 @@ struct AddTranslationHandler: ToolHandler {
         let value = try context.arguments.requireString("value")
 
         let parser = XCStringsParser(path: file)
-        try await parser.addTranslation(key: key, language: language, value: value)
-        return "Translation added successfully"
+        let result = try await parser.addTranslation(key: key, language: language, value: value)
+        let response = MCPWriteResponse(
+            file: file,
+            operationType: .addTranslation,
+            key: key,
+            languages: [language],
+            fileChanged: true,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
+            placeholderValidations: result.placeholderValidations.filter(\.checked),
+            validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
+        )
+        return try JSONEncoderHelper.encode(response)
     }
 }
 
 // MARK: - Add Translations Handler
 
 struct AddTranslationsHandler: ToolHandler {
-    static let toolName = "xcstrings_add_translations"
+    static let toolName = "xcatalog_add_translations"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -30,15 +40,25 @@ struct AddTranslationsHandler: ToolHandler {
         let translations = try context.arguments.requireTranslations("translations")
 
         let parser = XCStringsParser(path: file)
-        try await parser.addTranslations(key: key, translations: translations)
-        return "Translations added successfully for \(translations.count) languages"
+        let result = try await parser.addTranslations(key: key, translations: translations)
+        let response = MCPWriteResponse(
+            file: file,
+            operationType: .addTranslations,
+            key: key,
+            languages: translations.keys.sorted(),
+            fileChanged: true,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
+            placeholderValidations: result.placeholderValidations.filter(\.checked),
+            validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
+        )
+        return try JSONEncoderHelper.encode(response)
     }
 }
 
 // MARK: - Update Translation Handler
 
 struct UpdateTranslationHandler: ToolHandler {
-    static let toolName = "xcstrings_update_translation"
+    static let toolName = "xcatalog_update_translation"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -47,15 +67,25 @@ struct UpdateTranslationHandler: ToolHandler {
         let value = try context.arguments.requireString("value")
 
         let parser = XCStringsParser(path: file)
-        try await parser.updateTranslation(key: key, language: language, value: value)
-        return "Translation updated successfully"
+        let result = try await parser.updateTranslation(key: key, language: language, value: value)
+        let response = MCPWriteResponse(
+            file: file,
+            operationType: .updateTranslation,
+            key: key,
+            languages: [language],
+            fileChanged: true,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
+            placeholderValidations: result.placeholderValidations.filter(\.checked),
+            validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
+        )
+        return try JSONEncoderHelper.encode(response)
     }
 }
 
 // MARK: - Update Translations Handler
 
 struct UpdateTranslationsHandler: ToolHandler {
-    static let toolName = "xcstrings_update_translations"
+    static let toolName = "xcatalog_update_translations"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -63,15 +93,25 @@ struct UpdateTranslationsHandler: ToolHandler {
         let translations = try context.arguments.requireTranslations("translations")
 
         let parser = XCStringsParser(path: file)
-        try await parser.updateTranslations(key: key, translations: translations)
-        return "Translations updated successfully for \(translations.count) languages"
+        let result = try await parser.updateTranslations(key: key, translations: translations)
+        let response = MCPWriteResponse(
+            file: file,
+            operationType: .updateTranslations,
+            key: key,
+            languages: translations.keys.sorted(),
+            fileChanged: true,
+            entries: MCPWriteResponseBuilder.entries(key: key, languageResults: result.languageResults),
+            placeholderValidations: result.placeholderValidations.filter(\.checked),
+            validationWarnings: MCPWriteResponseBuilder.validationWarnings(from: result.placeholderValidations)
+        )
+        return try JSONEncoderHelper.encode(response)
     }
 }
 
 // MARK: - Rename Key Handler
 
 struct RenameKeyHandler: ToolHandler {
-    static let toolName = "xcstrings_rename_key"
+    static let toolName = "xcatalog_rename_key"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -80,6 +120,20 @@ struct RenameKeyHandler: ToolHandler {
 
         let parser = XCStringsParser(path: file)
         try await parser.renameKey(from: oldKey, to: newKey)
-        return "Key renamed from '\(oldKey)' to '\(newKey)' successfully"
+        let response = MCPWriteResponse(
+            file: file,
+            operationType: .renameKey,
+            key: oldKey,
+            fileChanged: true,
+            entries: [
+                MCPWriteEntryResult(
+                    key: oldKey,
+                    action: .renamed,
+                    previousKey: oldKey,
+                    finalKey: newKey
+                )
+            ]
+        )
+        return try JSONEncoderHelper.encode(response)
     }
 }

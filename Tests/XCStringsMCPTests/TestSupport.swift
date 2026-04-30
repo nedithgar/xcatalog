@@ -1,4 +1,5 @@
 import Foundation
+import XCStringsTestSupport
 
 enum TestFixtures {
     static let empty = """
@@ -276,6 +277,8 @@ enum TestFixtures {
       "version": "1.2"
     }
     """
+
+    static let preflightMixedCatalog = SharedTestFixtures.preflightMixedCatalog
 }
 
 enum TestHelper {

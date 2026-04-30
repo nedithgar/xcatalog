@@ -21,6 +21,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
     case withStaleKeys
     case withLocaleOnlyOnNonTranslatableKey
     case realWorldSample
+    case catalogPersistenceRegression
 
     var testDescription: String { rawValue }
 
@@ -42,6 +43,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
         case .withStaleKeys: TestFixtures.withStaleKeys
         case .withLocaleOnlyOnNonTranslatableKey: TestFixtures.withLocaleOnlyOnNonTranslatableKey
         case .realWorldSample: TestFixtures.realWorldSample
+        case .catalogPersistenceRegression: TestFixtures.catalogPersistenceRegression
         }
     }
 
@@ -63,6 +65,7 @@ enum FixtureType: String, CaseIterable, CustomTestStringConvertible {
         case .withStaleKeys: 4
         case .withLocaleOnlyOnNonTranslatableKey: 2
         case .realWorldSample: 4
+        case .catalogPersistenceRegression: 6
         }
     }
 

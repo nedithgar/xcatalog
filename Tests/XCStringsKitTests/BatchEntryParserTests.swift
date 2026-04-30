@@ -96,4 +96,23 @@ struct BatchEntryParserTests {
         #expect(BatchEntryParseError.emptyLanguage(":Hello").localizedDescription == "Empty language code in: ':Hello'")
         #expect(BatchEntryParseError.noTranslations("Hello=").localizedDescription == "No translations specified for: 'Hello='")
     }
+
+    @Test("LocaleSupplementEntryParser parses key=value entries")
+    func parseLocaleSupplementEntry() throws {
+        let result = try LocaleSupplementEntryParser.parse("Greeting=こんにちは=Hello")
+
+        #expect(result.key == "Greeting")
+        #expect(result.value == "こんにちは=Hello")
+    }
+
+    @Test("LocaleSupplementEntryParser throws for invalid entries")
+    func parseLocaleSupplementEntryInvalid() throws {
+        #expect(throws: LocaleSupplementEntryParseError.self) {
+            try LocaleSupplementEntryParser.parse("Greeting")
+        }
+        #expect(throws: LocaleSupplementEntryParseError.self) {
+            try LocaleSupplementEntryParser.parse("=こんにちは")
+        }
+        #expect(LocaleSupplementEntryParseError.invalidFormat("Greeting").localizedDescription.contains("Expected 'key=value'"))
+    }
 }

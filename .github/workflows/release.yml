@@ -23,9 +23,9 @@ jobs:
         run: |
           mkdir -p .build/universal
           lipo -create \
-            .build/arm64-apple-macosx/release/xcstrings-crud \
-            .build/x86_64-apple-macosx/release/xcstrings-crud \
-            -output .build/universal/xcstrings-crud
+            .build/arm64-apple-macosx/release/xcatalog \
+            .build/x86_64-apple-macosx/release/xcatalog \
+            -output .build/universal/xcatalog
 
       - name: Package Release Assets
         env:
@@ -36,27 +36,27 @@ jobs:
             .build/release-assets/x86_64 \
             .build/release-assets/universal
           cp \
-            .build/arm64-apple-macosx/release/xcstrings-crud \
-            ".build/release-assets/arm64/xcstrings-crud"
+            .build/arm64-apple-macosx/release/xcatalog \
+            ".build/release-assets/arm64/xcatalog"
           cp \
-            .build/x86_64-apple-macosx/release/xcstrings-crud \
-            ".build/release-assets/x86_64/xcstrings-crud"
+            .build/x86_64-apple-macosx/release/xcatalog \
+            ".build/release-assets/x86_64/xcatalog"
           cp \
-            .build/universal/xcstrings-crud \
-            ".build/release-assets/universal/xcstrings-crud"
+            .build/universal/xcatalog \
+            ".build/release-assets/universal/xcatalog"
           chmod +x \
-            ".build/release-assets/arm64/xcstrings-crud" \
-            ".build/release-assets/x86_64/xcstrings-crud" \
-            ".build/release-assets/universal/xcstrings-crud"
+            ".build/release-assets/arm64/xcatalog" \
+            ".build/release-assets/x86_64/xcatalog" \
+            ".build/release-assets/universal/xcatalog"
           tar -C .build/release-assets/arm64 -czvf \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64.tar.gz" \
-            xcstrings-crud
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-arm64.tar.gz" \
+            xcatalog
           tar -C .build/release-assets/x86_64 -czvf \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64.tar.gz" \
-            xcstrings-crud
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-x86_64.tar.gz" \
+            xcatalog
           tar -C .build/release-assets/universal -czvf \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" \
-            xcstrings-crud
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-universal.tar.gz" \
+            xcatalog
           rm -rf \
             .build/release-assets/arm64 \
             .build/release-assets/x86_64 \
@@ -68,9 +68,9 @@ jobs:
         run: |
           cd .build/release-assets
           shasum -a 256 \
-            "xcstrings-crud-${TAG_NAME}-darwin-arm64.tar.gz" \
-            "xcstrings-crud-${TAG_NAME}-darwin-x86_64.tar.gz" \
-            "xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" > checksums.txt
+            "xcatalog-${TAG_NAME}-darwin-arm64.tar.gz" \
+            "xcatalog-${TAG_NAME}-darwin-x86_64.tar.gz" \
+            "xcatalog-${TAG_NAME}-darwin-universal.tar.gz" > checksums.txt
 
       - name: Upload Release Assets
         env:
@@ -79,7 +79,7 @@ jobs:
         run: |
           gh release upload "${TAG_NAME}" \
             --clobber \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-arm64.tar.gz" \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-x86_64.tar.gz" \
-            ".build/release-assets/xcstrings-crud-${TAG_NAME}-darwin-universal.tar.gz" \
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-arm64.tar.gz" \
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-x86_64.tar.gz" \
+            ".build/release-assets/xcatalog-${TAG_NAME}-darwin-universal.tar.gz" \
             ".build/release-assets/checksums.txt"

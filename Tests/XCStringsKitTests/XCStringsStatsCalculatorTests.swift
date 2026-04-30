@@ -275,7 +275,7 @@ struct XCStringsStatsCalculatorTests {
 
     private func makeFile(translated: Int, total: Int, language: String = "en") -> XCStringsFile {
         let strings = Dictionary(uniqueKeysWithValues: (0..<total).map { index in
-            let localizations: [String: Localization]? = index < translated
+            let localizations: OrderedStringDictionary<Localization>? = index < translated
                 ? [language: Localization(stringUnit: StringUnit(value: "Value \(index)"))]
                 : nil
             return ("Key\(index)", StringEntry(localizations: localizations))

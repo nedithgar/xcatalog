@@ -1,4 +1,5 @@
 import Foundation
+import XCStringsTestSupport
 
 /// Test fixtures for xcstrings file testing
 enum TestFixtures {
@@ -468,6 +469,64 @@ enum TestFixtures {
     }
     """
 
+    /// Keys with string catalog substitutions and extra metadata.
+    static let withSubstitutions = """
+    {
+      "sourceLanguage": "en",
+      "strings": {
+        "plain.key": {
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "Plain"
+              }
+            }
+          }
+        },
+        "items.count": {
+          "developerMetadata": {
+            "domain": "catalog-fixture",
+            "priority": 1
+          },
+          "localizations": {
+            "en": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%#@itemCount@"
+              },
+              "localizationNote": "preserve-localization-unknown-field",
+              "substitutions": {
+                "itemCount": {
+                  "argNum": 1,
+                  "formatSpecifier": "lld",
+                  "substitutionNote": "preserve-substitution-unknown-field",
+                  "variations": {
+                    "plural": {
+                      "one": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg item"
+                        }
+                      },
+                      "other": {
+                        "stringUnit": {
+                          "state": "translated",
+                          "value": "%arg items"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "version": "1.0"
+    }
+    """
+
     /// Keys with stale extraction state
     static let withStaleKeys = """
     {
@@ -501,6 +560,9 @@ enum TestFixtures {
       "version": "1.0"
     }
     """
+
+    /// Mixed catalog used by the preflight classifier.
+    static let preflightMixedCatalog = SharedTestFixtures.preflightMixedCatalog
 
     /// Derived from the temporary repo-root catalog so tests keep exercising a
     /// real catalog shape after that file is removed.
@@ -556,6 +618,91 @@ enum TestFixtures {
       "version": "1.2"
     }
     """
+
+    /// Minimal sample app catalog slice derived from local integration coverage.
+    /// The key order intentionally catches sorted-key rewrites:
+    /// - `sample.export.saved` must stay before `sample.export.saveCopyDetail`.
+    /// - `sample.library.itemAccessibilityLabel` must stay before `sample.library.people`.
+    static let catalogPersistenceRegression = """
+    {
+      "sourceLanguage" : "en",
+      "strings" : {
+        "sample.action.import" : {
+          "comment" : "A button title for importing an item.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "Import"
+              }
+            }
+          }
+        },
+        "sample.action.preview" : {
+          "comment" : "A button title for previewing export output.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "Preview"
+              }
+            }
+          }
+        },
+        "sample.export.saved" : {
+          "comment" : "A transient status shown after writing an export to disk.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "Export saved"
+              }
+            }
+          }
+        },
+        "sample.export.saveCopyDetail" : {
+          "comment" : "An export action detail for saving a copy.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "Save as a new file with extra details removed."
+              }
+            }
+          }
+        },
+        "sample.library.itemAccessibilityLabel" : {
+          "comment" : "An accessibility label for an item thumbnail that includes creation date and pixel dimensions.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "Item, %1$@, %2$lld by %3$lld pixels"
+              }
+            }
+          }
+        },
+        "sample.library.people" : {
+          "comment" : "A sidebar library destination title.",
+          "extractionState" : "manual",
+          "localizations" : {
+            "en" : {
+              "stringUnit" : {
+                "state" : "translated",
+                "value" : "People"
+              }
+            }
+          }
+        }
+      },
+      "version" : "1.2"
+    }
+    """ + "\n"
 }
 
 /// Test helper utilities

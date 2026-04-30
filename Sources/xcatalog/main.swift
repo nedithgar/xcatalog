@@ -3,7 +3,7 @@ import XCStringsCLI
 
 @main
 @available(macOS 13.0, *)
-struct XCStringsCRUDMain {
+struct XCatalogMain {
     static func main() async throws {
         await XCStringsCLI.main()
     }

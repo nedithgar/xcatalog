@@ -21,7 +21,7 @@ struct CreateCommand: AsyncParsableCommand {
     var pretty = false
 
     func run() async throws {
-        try XCStringsParser.createFile(at: file, sourceLanguage: sourceLanguage, overwrite: overwrite)
+        try await XCStringsParser.createFile(at: file, sourceLanguage: sourceLanguage, overwrite: overwrite)
         let result = CLIResult.success(message: "Created xcstrings file at '\(file)' with source language '\(sourceLanguage)'")
         try CLIOutput.printJSON(result, pretty: pretty)
     }

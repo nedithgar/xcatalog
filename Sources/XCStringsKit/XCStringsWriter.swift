@@ -2,6 +2,11 @@ import Foundation
 
 /// Handles write operations for xcstrings files
 enum XCStringsWriter {
+    struct TranslationMutationResult: Sendable {
+        let file: XCStringsFile
+        let placeholderValidations: [PlaceholderValidationResult]
+    }
+
     /// Add a translation for a key
     static func addTranslation(
         to file: XCStringsFile,
@@ -10,9 +15,30 @@ enum XCStringsWriter {
         value: String,
         allowOverwrite: Bool = false
     ) throws -> XCStringsFile {
+        try addTranslationResult(
+            to: file,
+            key: key,
+            language: language,
+            value: value,
+            allowOverwrite: allowOverwrite
+        ).file
+    }
+
+    /// Add a translation for a key and return the validations used for the write.
+    static func addTranslationResult(
+        to file: XCStringsFile,
+        key: String,
+        language: String,
+        value: String,
+        allowOverwrite: Bool = false
+    ) throws -> TranslationMutationResult {
         var result = file
 
-        try validateTranslationWrite(for: key, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: [language: value],
+            in: result
+        )
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -26,11 +52,9 @@ enum XCStringsWriter {
             result.strings[key]?.localizations = [:]
         }
 
-        result.strings[key]?.localizations?[language] = Localization(
-            stringUnit: StringUnit(state: "translated", value: value)
-        )
+        setPlainLocalization(in: &result, key: key, language: language, value: value)
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Add translations for multiple languages
@@ -40,9 +64,28 @@ enum XCStringsWriter {
         translations: [String: String],
         allowOverwrite: Bool = false
     ) throws -> XCStringsFile {
+        try addTranslationsResult(
+            to: file,
+            key: key,
+            translations: translations,
+            allowOverwrite: allowOverwrite
+        ).file
+    }
+
+    /// Add translations for multiple languages and return the validations used for the write.
+    static func addTranslationsResult(
+        to file: XCStringsFile,
+        key: String,
+        translations: [String: String],
+        allowOverwrite: Bool = false
+    ) throws -> TranslationMutationResult {
         var result = file
 
-        try validateTranslationWrite(for: key, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: translations,
+            in: result
+        )
 
         if result.strings[key] == nil {
             result.strings[key] = StringEntry(localizations: [:])
@@ -52,17 +95,15 @@ enum XCStringsWriter {
             result.strings[key]?.localizations = [:]
         }
 
-        for (language, value) in translations {
+        for (language, value) in sortedTranslations(translations) {
             if !allowOverwrite, result.strings[key]?.localizations?[language] != nil {
                 throw XCStringsError.keyAlreadyExists(key: "\(key):\(language)")
             }
 
-            result.strings[key]?.localizations?[language] = Localization(
-                stringUnit: StringUnit(state: "translated", value: value)
-            )
+            setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Update an existing translation
@@ -72,23 +113,40 @@ enum XCStringsWriter {
         language: String,
         value: String
     ) throws -> XCStringsFile {
+        try updateTranslationResult(
+            in: file,
+            key: key,
+            language: language,
+            value: value
+        ).file
+    }
+
+    /// Update an existing translation and return the validations used for the write.
+    static func updateTranslationResult(
+        in file: XCStringsFile,
+        key: String,
+        language: String,
+        value: String
+    ) throws -> TranslationMutationResult {
         var result = file
 
         guard result.strings[key] != nil else {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        try validateTranslationWrite(for: key, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: [language: value],
+            in: result
+        )
 
         guard result.strings[key]?.localizations?[language] != nil else {
             throw XCStringsError.languageNotFound(language: language, key: key)
         }
 
-        result.strings[key]?.localizations?[language] = Localization(
-            stringUnit: StringUnit(state: "translated", value: value)
-        )
+        setPlainLocalization(in: &result, key: key, language: language, value: value)
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Update translations for multiple languages
@@ -97,25 +155,36 @@ enum XCStringsWriter {
         key: String,
         translations: [String: String]
     ) throws -> XCStringsFile {
+        try updateTranslationsResult(in: file, key: key, translations: translations).file
+    }
+
+    /// Update translations for multiple languages and return the validations used for the write.
+    static func updateTranslationsResult(
+        in file: XCStringsFile,
+        key: String,
+        translations: [String: String]
+    ) throws -> TranslationMutationResult {
         var result = file
 
         guard result.strings[key] != nil else {
             throw XCStringsError.keyNotFound(key: key)
         }
 
-        try validateTranslationWrite(for: key, in: result)
+        let placeholderValidations = try validateTranslationWrite(
+            for: key,
+            translations: translations,
+            in: result
+        )
 
-        for (language, value) in translations {
+        for (language, value) in sortedTranslations(translations) {
             guard result.strings[key]?.localizations?[language] != nil else {
                 throw XCStringsError.languageNotFound(language: language, key: key)
             }
 
-            result.strings[key]?.localizations?[language] = Localization(
-                stringUnit: StringUnit(state: "translated", value: value)
-            )
+            setPlainLocalization(in: &result, key: key, language: language, value: value)
         }
 
-        return result
+        return TranslationMutationResult(file: result, placeholderValidations: placeholderValidations)
     }
 
     /// Rename a key
@@ -126,7 +195,7 @@ enum XCStringsWriter {
     ) throws -> XCStringsFile {
         var result = file
 
-        guard let entry = result.strings[oldKey] else {
+        guard result.strings[oldKey] != nil else {
             throw XCStringsError.keyNotFound(key: oldKey)
         }
 
@@ -134,8 +203,7 @@ enum XCStringsWriter {
             throw XCStringsError.keyAlreadyExists(key: newKey)
         }
 
-        result.strings[newKey] = entry
-        result.strings.removeValue(forKey: oldKey)
+        result.strings.renameKey(from: oldKey, to: newKey)
 
         return result
     }
@@ -209,24 +277,72 @@ enum XCStringsWriter {
         allowOverwrite: Bool = false
     ) -> (file: XCStringsFile, result: BatchWriteResult) {
         var result = file
-        var succeeded: [String] = []
-        var failed: [BatchWriteError] = []
+        var entryResults: [BatchWriteEntryResult] = []
+        var placeholderValidations: [PlaceholderValidationResult] = []
 
-        for entry in entries {
+        for (inputIndex, entry) in entries.enumerated() {
             do {
-                result = try addTranslations(
-                    to: result,
-                    key: entry.key,
+                let validations = try validateTranslationWrite(
+                    for: entry.key,
                     translations: entry.translations,
-                    allowOverwrite: allowOverwrite
+                    in: result
                 )
-                succeeded.append(entry.key)
+                var candidate = result
+                if candidate.strings[entry.key] == nil {
+                    candidate.strings[entry.key] = StringEntry(localizations: [:])
+                }
+
+                if candidate.strings[entry.key]?.localizations == nil {
+                    candidate.strings[entry.key]?.localizations = [:]
+                }
+
+                var languageResults: [BatchWriteLanguageResult] = []
+                for (language, value) in sortedTranslations(entry.translations) {
+                    let previousState = translationSnapshot(in: candidate, key: entry.key, language: language)
+                    if !allowOverwrite, previousState != nil {
+                        throw XCStringsError.keyAlreadyExists(key: "\(entry.key):\(language)")
+                    }
+
+                    setPlainLocalization(in: &candidate, key: entry.key, language: language, value: value)
+                    let finalState = translationSnapshot(in: candidate, key: entry.key, language: language)
+                    languageResults.append(
+                        BatchWriteLanguageResult(
+                            language: language,
+                            action: previousState == nil ? .inserted : .updated,
+                            previousState: previousState,
+                            finalState: finalState,
+                            placeholderValidation: validations.first {
+                                $0.key == entry.key && $0.language == language
+                            }
+                        )
+                    )
+                }
+
+                result = candidate
+                placeholderValidations.append(contentsOf: validations)
+                entryResults.append(
+                    BatchWriteEntryResult(
+                        inputIndex: inputIndex,
+                        key: entry.key,
+                        status: .succeeded,
+                        languageResults: languageResults
+                    )
+                )
             } catch {
-                failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
+                let message = error.localizedDescription
+                entryResults.append(
+                    BatchWriteEntryResult(inputIndex: inputIndex, key: entry.key, status: .failed, error: message)
+                )
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed))
+        return (
+            result,
+            BatchWriteResult(
+                entryResults: entryResults,
+                placeholderValidations: placeholderValidations
+            )
+        )
     }
 
     /// Update translations for multiple keys at once
@@ -235,28 +351,273 @@ enum XCStringsWriter {
         entries: [BatchTranslationEntry]
     ) -> (file: XCStringsFile, result: BatchWriteResult) {
         var result = file
-        var succeeded: [String] = []
-        var failed: [BatchWriteError] = []
+        var entryResults: [BatchWriteEntryResult] = []
+        var placeholderValidations: [PlaceholderValidationResult] = []
 
-        for entry in entries {
+        for (inputIndex, entry) in entries.enumerated() {
             do {
-                result = try updateTranslations(
-                    in: result,
-                    key: entry.key,
-                    translations: entry.translations
+                let validations = try validateTranslationWrite(
+                    for: entry.key,
+                    translations: entry.translations,
+                    in: result
                 )
-                succeeded.append(entry.key)
+                var candidate = result
+                guard candidate.strings[entry.key] != nil else {
+                    throw XCStringsError.keyNotFound(key: entry.key)
+                }
+
+                var languageResults: [BatchWriteLanguageResult] = []
+                for (language, value) in sortedTranslations(entry.translations) {
+                    guard let previousState = translationSnapshot(in: candidate, key: entry.key, language: language) else {
+                        throw XCStringsError.languageNotFound(language: language, key: entry.key)
+                    }
+
+                    setPlainLocalization(in: &candidate, key: entry.key, language: language, value: value)
+                    languageResults.append(
+                        BatchWriteLanguageResult(
+                            language: language,
+                            action: .updated,
+                            previousState: previousState,
+                            finalState: translationSnapshot(in: candidate, key: entry.key, language: language),
+                            placeholderValidation: validations.first {
+                                $0.key == entry.key && $0.language == language
+                            }
+                        )
+                    )
+                }
+
+                result = candidate
+                placeholderValidations.append(contentsOf: validations)
+                entryResults.append(
+                    BatchWriteEntryResult(
+                        inputIndex: inputIndex,
+                        key: entry.key,
+                        status: .succeeded,
+                        languageResults: languageResults
+                    )
+                )
             } catch {
-                failed.append(BatchWriteError(key: entry.key, error: error.localizedDescription))
+                let message = error.localizedDescription
+                entryResults.append(
+                    BatchWriteEntryResult(inputIndex: inputIndex, key: entry.key, status: .failed, error: message)
+                )
             }
         }
 
-        return (result, BatchWriteResult(succeeded: succeeded, failed: failed))
+        return (
+            result,
+            BatchWriteResult(
+                entryResults: entryResults,
+                placeholderValidations: placeholderValidations
+            )
+        )
     }
 
-    private static func validateTranslationWrite(for key: String, in file: XCStringsFile) throws {
+    static func validateTranslationWrite(
+        for key: String,
+        translations: [String: String],
+        in file: XCStringsFile
+    ) throws -> [PlaceholderValidationResult] {
         guard file.strings[key]?.shouldTranslate != false else {
             throw XCStringsError.nonTranslatableKey(key: key)
         }
+
+        guard let entry = file.strings[key] else {
+            return try sortedTranslations(translations).map { language, value in
+                let sourceValue = try sourceValueForPlaceholderValidation(
+                    key: key,
+                    language: language,
+                    value: value,
+                    sourceLanguage: file.sourceLanguage,
+                    incomingSourceValue: translations[file.sourceLanguage],
+                    existingSourceValue: nil
+                )
+                let validation = FormatStringSafety.validate(
+                    key: key,
+                    language: language,
+                    sourceValue: sourceValue,
+                    targetValue: value
+                )
+                try throwIfInvalid(validation)
+                return validation
+            }
+        }
+
+        var validations = try sortedTranslations(translations).map { language, value in
+            guard entry.localizations?[file.sourceLanguage]?.hasRichContent != true,
+                  entry.localizations?[language]?.hasRichContent != true else {
+                throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
+            }
+
+            let sourceValue = try sourceValueForPlaceholderValidation(
+                key: key,
+                language: language,
+                value: value,
+                sourceLanguage: file.sourceLanguage,
+                incomingSourceValue: translations[file.sourceLanguage],
+                existingSourceValue: entry.localizations?[file.sourceLanguage]?.stringUnit?.value
+            )
+            let validation = FormatStringSafety.validate(
+                key: key,
+                language: language,
+                sourceValue: sourceValue,
+                targetValue: value
+            )
+            try throwIfInvalid(validation)
+            return validation
+        }
+
+        let existingSourceValue = entry.localizations?[file.sourceLanguage]?.stringUnit?.value ?? key
+        if let incomingSourceValue = translations[file.sourceLanguage],
+           incomingSourceValue != existingSourceValue {
+            let existingTargetValidations = try validateExistingTargets(
+                for: key,
+                incomingSourceValue: incomingSourceValue,
+                replacingLanguages: Set(translations.keys),
+                in: entry,
+                sourceLanguage: file.sourceLanguage
+            )
+            validations.append(contentsOf: existingTargetValidations)
+        }
+
+        return validations
+    }
+
+    private static func sourceValueForPlaceholderValidation(
+        key: String,
+        language: String,
+        value: String,
+        sourceLanguage: String,
+        incomingSourceValue: String?,
+        existingSourceValue: String?
+    ) throws -> String {
+        if language == sourceLanguage {
+            return value
+        }
+
+        if let incomingSourceValue {
+            return incomingSourceValue
+        }
+
+        if let existingSourceValue {
+            return existingSourceValue
+        }
+
+        let keyPlaceholders = FormatStringSafety.placeholders(in: key)
+        let targetPlaceholders = FormatStringSafety.placeholders(in: value)
+        if keyPlaceholders.isEmpty, !targetPlaceholders.isEmpty {
+            throw XCStringsError.missingSourceValueForFormatValidation(
+                key: key,
+                language: language,
+                sourceLanguage: sourceLanguage
+            )
+        }
+
+        return key
+    }
+
+    private static func throwIfInvalid(_ validation: PlaceholderValidationResult) throws {
+        if !validation.isValid {
+            throw XCStringsError.unsafeFormatString(
+                key: validation.key,
+                language: validation.language,
+                diagnostics: validation.diagnostics
+            )
+        }
+    }
+
+    private static func sortedTranslations(
+        _ translations: [String: String]
+    ) -> [(language: String, value: String)] {
+        translations
+            .sorted { $0.key < $1.key }
+            .map { (language: $0.key, value: $0.value) }
+    }
+
+    private static func sortedLocalizations(
+        _ localizations: OrderedStringDictionary<Localization>
+    ) -> [(language: String, localization: Localization)] {
+        localizations
+            .sortedByKey()
+            .map { (language: $0.key, localization: $0.value) }
+    }
+
+    private static func validateExistingTargets(
+        for key: String,
+        incomingSourceValue: String,
+        replacingLanguages: Set<String>,
+        in entry: StringEntry,
+        sourceLanguage: String
+    ) throws -> [PlaceholderValidationResult] {
+        var validations: [PlaceholderValidationResult] = []
+
+        for (language, localization) in sortedLocalizations(entry.localizations ?? [:]) {
+            guard language != sourceLanguage,
+                  !replacingLanguages.contains(language) else {
+                continue
+            }
+
+            guard localization.stringUnit?.value != nil || localization.hasRichContent else {
+                continue
+            }
+
+            guard localization.hasRichContent != true,
+                  let targetValue = localization.stringUnit?.value else {
+                throw XCStringsError.richLocalizationUnsupported(key: key, language: language)
+            }
+
+            let validation = FormatStringSafety.validate(
+                key: key,
+                language: language,
+                sourceValue: incomingSourceValue,
+                targetValue: targetValue
+            )
+            try throwIfInvalid(validation)
+            validations.append(validation)
+        }
+
+        return validations
+    }
+
+    private static func setPlainLocalization(
+        in file: inout XCStringsFile,
+        key: String,
+        language: String,
+        value: String
+    ) {
+        var entry = file.strings[key] ?? StringEntry(localizations: [:])
+        var localizations = entry.localizations ?? [:]
+        localizations[language] = plainLocalization(from: localizations[language], value: value)
+        entry.localizations = localizations
+        file.strings[key] = entry
+    }
+
+    private static func plainLocalization(from existing: Localization?, value: String) -> Localization {
+        var localization = existing ?? Localization()
+        localization.stringUnit = StringUnit(
+            state: localization.stringUnit?.state ?? "translated",
+            value: value,
+            unknownFields: localization.stringUnit?.unknownFields ?? [:]
+        )
+        return localization
+    }
+
+    static func translationSnapshot(
+        in file: XCStringsFile,
+        key: String,
+        language: String
+    ) -> BatchWriteTranslationSnapshot? {
+        guard let localization = file.strings[key]?.localizations?[language] else {
+            return nil
+        }
+
+        return BatchWriteTranslationSnapshot(
+            key: key,
+            language: language,
+            value: localization.stringUnit?.value,
+            state: localization.stringUnit?.state,
+            hasVariations: localization.variations != nil,
+            hasSubstitutions: localization.substitutions != nil
+        )
     }
 }

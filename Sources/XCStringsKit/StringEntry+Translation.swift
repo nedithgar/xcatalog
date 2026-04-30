@@ -11,7 +11,9 @@ enum StringEntryTranslationSemantics {
 
     static func hasConcreteLocalization(_ entry: StringEntry, for language: String) -> Bool {
         let localization = entry.localizations?[language]
-        return localization?.stringUnit?.value != nil || localization?.variations != nil
+        return localization?.stringUnit?.value != nil
+            || localization?.variations != nil
+            || localization?.substitutions != nil
     }
 
     static func countsAsTranslated(_ entry: StringEntry, for language: String) -> Bool {

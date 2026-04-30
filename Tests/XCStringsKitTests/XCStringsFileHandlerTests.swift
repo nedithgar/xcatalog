@@ -16,6 +16,45 @@ struct XCStringsFileHandlerTests {
         #expect(file.strings.count == 1)
     }
 
+    @Test("load decodes substitution-backed keys")
+    func loadDecodesSubstitutionKeys() throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withSubstitutions)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        let file = try handler.load()
+
+        let localization = try #require(file.strings["items.count"]?.localizations?["en"])
+        let substitution = try #require(localization.substitutions?["itemCount"])
+
+        #expect(localization.stringUnit?.value == "%#@itemCount@")
+        #expect(substitution.argNum == 1)
+        #expect(substitution.formatSpecifier == "lld")
+        #expect(substitution.variations?.plural?.one?.stringUnit?.value == "%arg item")
+        #expect(substitution.variations?.plural?.other?.stringUnit?.value == "%arg items")
+    }
+
+    @Test("save preserves substitutions and unknown fields")
+    func savePreservesSubstitutionsAndUnknownFields() throws {
+        let path = try TestHelper.createTempFile(content: TestFixtures.withSubstitutions)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        let file = try handler.load()
+
+        try handler.save(file)
+
+        let reloaded = try handler.load()
+        let entry = try #require(reloaded.strings["items.count"])
+        let localization = try #require(entry.localizations?["en"])
+        let substitution = try #require(localization.substitutions?["itemCount"])
+
+        #expect(entry.unknownFields["developerMetadata"] != nil)
+        #expect(localization.unknownFields["localizationNote"] != nil)
+        #expect(substitution.unknownFields["substitutionNote"] != nil)
+        #expect(substitution.variations?.plural?.one?.stringUnit?.value == "%arg item")
+    }
+
     @Test("load throws fileNotFound for non-existent path")
     func loadNonExistentFile() {
         let handler = XCStringsFileHandler(path: "/nonexistent/path/file.xcstrings")
@@ -37,9 +76,36 @@ struct XCStringsFileHandlerTests {
         }
     }
 
+    @Test("load reports scanner file format errors once with the real path")
+    func loadReportsScannerFileFormatErrorsOnce() throws {
+        let content = #"{"sourceLanguage":"en","strings":{},"version":"1.0"}"#
+        var data = Data([0xFF, 0xFE])
+        data.append(try #require(content.data(using: .utf16LittleEndian)))
+        let url = try createTempDataFile(bytes: Array(data))
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let handler = XCStringsFileHandler(path: url.path)
+
+        do {
+            _ = try handler.load()
+            Issue.record("Expected load to reject non-UTF-8 key-order scanning input")
+        } catch let error as XCStringsError {
+            guard case let .invalidFileFormat(path, reason) = error else {
+                Issue.record("Expected invalidFileFormat, got \(error)")
+                return
+            }
+
+            #expect(path == url.path)
+            #expect(reason == "File is not valid UTF-8")
+            #expect(error.localizedDescription == "Invalid file format at '\(url.path)': File is not valid UTF-8")
+        } catch {
+            Issue.record("Expected XCStringsError, got \(error)")
+        }
+    }
+
     @Test("load throws invalidFileFormat when path points to a directory")
     func loadDirectoryPath() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("xcstrings_dir_\(UUID().uuidString)")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("xcatalog_dir_\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -84,6 +150,83 @@ struct XCStringsFileHandlerTests {
         #expect(reloaded.sourceLanguage == original.sourceLanguage)
         #expect(reloaded.version == original.version)
         #expect(reloaded.strings.count == original.strings.count)
+    }
+
+    @Test("save preserves an existing file without trailing newline")
+    func savePreservesMissingTrailingNewline() throws {
+        let content = #"{"sourceLanguage":"en","strings":{},"version":"1.0"}"#
+        let path = try TestHelper.createTempFile(content: content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        let file = try handler.load()
+
+        try handler.save(file)
+
+        let savedContent = try String(contentsOfFile: path, encoding: .utf8)
+        #expect(!savedContent.hasSuffix("\n"))
+    }
+
+    @Test("save preserves trailing newline according to the existing file's final byte", arguments: TrailingNewlineSaveCase.cases)
+    func savePreservesTrailingNewlineFinalByte(testCase: TrailingNewlineSaveCase) throws {
+        let path = try TestHelper.createTempFile(content: testCase.content)
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        let file = try handler.load()
+
+        try handler.save(file)
+
+        let savedData = try Data(contentsOf: URL(fileURLWithPath: path))
+        #expect((savedData.last == UInt8(0x0A)) == testCase.expectedHasTrailingNewline)
+    }
+
+    @Test("save writes trailing newline when target file does not exist yet")
+    func saveMissingFileDefaultsToTrailingNewline() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("saved_\(UUID().uuidString).xcstrings")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let handler = XCStringsFileHandler(path: url.path)
+        try handler.save(XCStringsFile(sourceLanguage: "en"))
+
+        let savedData = try Data(contentsOf: url)
+        #expect(savedData.last == UInt8(0x0A))
+    }
+
+    @Test("trailing newline detector reports final byte semantics", arguments: TrailingNewlineDetectionCase.cases)
+    func trailingNewlineDetectorReportsFinalByte(testCase: TrailingNewlineDetectionCase) throws {
+        let url = try createTempDataFile(bytes: testCase.bytes)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == testCase.expected)
+    }
+
+    @Test("trailing newline detector returns nil for a missing path")
+    func trailingNewlineDetectorMissingPath() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing_\(UUID().uuidString).xcstrings")
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == nil)
+    }
+
+    @Test("trailing newline detector returns nil for a directory path")
+    func trailingNewlineDetectorDirectoryPath() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xcatalog_dir_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == nil)
+    }
+
+    @Test("trailing newline detector handles large files from the final byte")
+    func trailingNewlineDetectorHandlesLargeFiles() throws {
+        let bytes = [UInt8](repeating: 0x20, count: 1_048_576) + [0x0A]
+        let url = try createTempDataFile(bytes: bytes)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(XCStringsFileTrailingNewlineDetector.hasTrailingNewline(at: url) == true)
     }
 
     @Test("save preserves non-translation metadata")
@@ -144,6 +287,20 @@ struct XCStringsFileHandlerTests {
         }
     }
 
+    @Test("create writes a trailing newline")
+    func createWritesTrailingNewline() throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("created_\(UUID().uuidString).xcstrings")
+            .path
+        defer { TestHelper.removeTempFile(at: path) }
+
+        let handler = XCStringsFileHandler(path: path)
+        try handler.create(sourceLanguage: "en")
+
+        let content = try String(contentsOfFile: path, encoding: .utf8)
+        #expect(content.hasSuffix("\n"))
+    }
+
     @Test("create throws writeError when parent directory is missing")
     func createWriteError() {
         let missingParent = FileManager.default.temporaryDirectory
@@ -155,4 +312,50 @@ struct XCStringsFileHandlerTests {
             try handler.create(sourceLanguage: "en")
         }
     }
+
+    private func createTempDataFile(bytes: [UInt8]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test_\(UUID().uuidString).xcstrings")
+        try Data(bytes).write(to: url, options: .atomic)
+        return url
+    }
+}
+
+struct TrailingNewlineSaveCase: CustomTestStringConvertible, Sendable {
+    let name: String
+    let suffix: String
+    let expectedHasTrailingNewline: Bool
+
+    var content: String {
+        #"{"sourceLanguage":"en","strings":{},"version":"1.0"}"# + suffix
+    }
+
+    var testDescription: String { name }
+
+    static let cases: [Self] = [
+        Self(name: "line feed", suffix: "\n", expectedHasTrailingNewline: true),
+        Self(name: "carriage return plus line feed", suffix: "\r\n", expectedHasTrailingNewline: true),
+        Self(name: "no trailing newline", suffix: "", expectedHasTrailingNewline: false),
+        Self(name: "carriage return only", suffix: "\r", expectedHasTrailingNewline: false),
+        Self(name: "space after line feed", suffix: "\n ", expectedHasTrailingNewline: false),
+        Self(name: "tab after line feed", suffix: "\n\t", expectedHasTrailingNewline: false),
+    ]
+}
+
+struct TrailingNewlineDetectionCase: CustomTestStringConvertible, Sendable {
+    let name: String
+    let bytes: [UInt8]
+    let expected: Bool?
+
+    var testDescription: String { name }
+
+    static let cases: [Self] = [
+        Self(name: "empty file", bytes: [], expected: nil),
+        Self(name: "single line feed byte", bytes: [0x0A], expected: true),
+        Self(name: "single non-newline byte", bytes: [0x20], expected: false),
+        Self(name: "carriage return plus line feed", bytes: [0x0D, 0x0A], expected: true),
+        Self(name: "carriage return only", bytes: [0x0D], expected: false),
+        Self(name: "null byte after line feed", bytes: [0x7B, 0x7D, 0x0A, 0x00], expected: false),
+        Self(name: "space after line feed", bytes: [0x7B, 0x7D, 0x0A, 0x20], expected: false),
+    ]
 }

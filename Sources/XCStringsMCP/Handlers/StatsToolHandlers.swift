@@ -5,7 +5,7 @@ import XCStringsKit
 // MARK: - Stats Coverage Handler
 
 struct StatsCoverageHandler: ToolHandler {
-    static let toolName = "xcstrings_stats_coverage"
+    static let toolName = "xcatalog_stats_coverage"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -26,7 +26,7 @@ struct StatsCoverageHandler: ToolHandler {
 // MARK: - Stats Progress Handler
 
 struct StatsProgressHandler: ToolHandler {
-    static let toolName = "xcstrings_stats_progress"
+    static let toolName = "xcatalog_stats_progress"
 
     func execute(with context: ToolContext) async throws -> String {
         let file = try context.arguments.requireString("file")
@@ -41,7 +41,7 @@ struct StatsProgressHandler: ToolHandler {
 // MARK: - Batch Stats Coverage Handler
 
 struct BatchStatsCoverageHandler: ToolHandler {
-    static let toolName = "xcstrings_batch_stats_coverage"
+    static let toolName = "xcatalog_batch_stats_coverage"
 
     func execute(with context: ToolContext) async throws -> String {
         let files = try context.arguments.requireStringArray("files")
