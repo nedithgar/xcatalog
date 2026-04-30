@@ -57,17 +57,18 @@ actor SerialOutboundTransport: Transport {
 
         sendTail = (id: sendID, task: currentSend)
 
-        do {
-            try await currentSend.value
-        } catch {
-            if sendTail?.id == sendID {
-                sendTail = nil
-            }
-            throw error
-        }
+        // Await the underlying task's completion via `.result` so caller
+        // cancellation cannot surface a `CancellationError` here while
+        // `base.send(data)` is still writing. Releasing `sendTail` before the
+        // inner task finishes would let the next `send(_:)` interleave bytes
+        // on stdout, breaking the single-in-flight guarantee this type exists
+        // to provide.
+        let result = await currentSend.result
 
         if sendTail?.id == sendID {
             sendTail = nil
         }
+
+        try result.get()
     }
 }
