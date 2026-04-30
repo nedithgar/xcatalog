@@ -11,6 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", exact: "0.12.0"),
     ],
     targets: [
@@ -33,6 +34,7 @@ let package = Package(
             dependencies: [
                 "XCStringsKit",
                 .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log"),
             ]
         ),
 
@@ -66,6 +68,7 @@ let package = Package(
                 "XCStringsKit",
                 "XCStringsTestSupport",
                 .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log"),
             ]
         ),
     ]
