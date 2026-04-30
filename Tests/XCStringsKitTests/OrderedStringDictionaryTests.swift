@@ -4,6 +4,60 @@ import Testing
 
 @Suite("Ordered string dictionary")
 struct OrderedStringDictionaryTests {
+    @Test("subscript update and removal keep lookups and order in sync")
+    func subscriptUpdateAndRemovalKeepLookupsAndOrderInSync() {
+        var dictionary = OrderedStringDictionary<Int>()
+        dictionary["a"] = 1
+        dictionary["b"] = 2
+        dictionary["c"] = 3
+
+        dictionary["b"] = 20
+        #expect(dictionary.keys == ["a", "b", "c"])
+        #expect(dictionary["b"] == 20)
+
+        #expect(dictionary.removeValue(forKey: "b") == 20)
+        #expect(dictionary.keys == ["a", "c"])
+        #expect(dictionary["b"] == nil)
+        #expect(dictionary["c"] == 3)
+
+        dictionary["d"] = 4
+        #expect(dictionary.keys == ["a", "c", "d"])
+        #expect(dictionary["d"] == 4)
+    }
+
+    @Test("rename updates lookup index without changing order")
+    func renameUpdatesLookupIndexWithoutChangingOrder() {
+        var dictionary = OrderedStringDictionary<Int>()
+        dictionary["first"] = 1
+        dictionary["second"] = 2
+        dictionary["third"] = 3
+
+        let didRename = dictionary.renameKey(from: "second", to: "middle")
+        #expect(didRename)
+        #expect(dictionary.keys == ["first", "middle", "third"])
+        #expect(dictionary["second"] == nil)
+        #expect(dictionary["middle"] == 2)
+
+        let didRenameToExistingKey = dictionary.renameKey(from: "middle", to: "third")
+        #expect(!didRenameToExistingKey)
+        #expect(dictionary.keys == ["first", "middle", "third"])
+        #expect(dictionary["middle"] == 2)
+        #expect(dictionary["third"] == 3)
+    }
+
+    @Test("decoded dictionaries rebuild lookup index")
+    func decodedDictionariesRebuildLookupIndex() throws {
+        let data = Data(#"{"z":26,"a":1,"m":13}"#.utf8)
+        var dictionary = try JSONDecoder().decode(OrderedStringDictionary<Int>.self, from: data)
+
+        #expect(dictionary["a"] == 1)
+        #expect(dictionary.removeValue(forKey: "z") == 26)
+        #expect(dictionary["m"] == 13)
+
+        dictionary["a"] = 10
+        #expect(dictionary["a"] == 10)
+    }
+
     @Test("reorder follows preferred keys and appends new keys once")
     func reorderFollowsPreferredKeysAndAppendsNewKeysOnce() {
         var dictionary = OrderedStringDictionary<Int>()

@@ -6,13 +6,16 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
     package typealias Element = (key: String, value: Value)
 
     private var elements: [Element]
+    private var indicesByKey: [String: Int]
 
     package init() {
         self.elements = []
+        self.indicesByKey = [:]
     }
 
     package init(_ elements: [Element]) {
         self.elements = []
+        self.indicesByKey = [:]
         for element in elements {
             self[element.key] = element.value
         }
@@ -33,6 +36,7 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
         self.elements = try container.allKeys.map { key in
             (key.stringValue, try container.decode(Value.self, forKey: key))
         }
+        self.indicesByKey = Self.indicesByKey(for: elements)
     }
 
     package func encode(to encoder: Encoder) throws {
@@ -44,7 +48,11 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
 
     package subscript(key: String) -> Value? {
         get {
-            elements.first { $0.key == key }?.value
+            guard let index = indicesByKey[key] else {
+                return nil
+            }
+
+            return elements[index].value
         }
         set {
             guard let newValue else {
@@ -52,9 +60,10 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
                 return
             }
 
-            if let index = elements.firstIndex(where: { $0.key == key }) {
+            if let index = indicesByKey[key] {
                 elements[index].value = newValue
             } else {
+                indicesByKey[key] = elements.count
                 elements.append((key, newValue))
             }
         }
@@ -82,21 +91,25 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
 
     @discardableResult
     package mutating func removeValue(forKey key: String) -> Value? {
-        guard let index = elements.firstIndex(where: { $0.key == key }) else {
+        guard let index = indicesByKey.removeValue(forKey: key) else {
             return nil
         }
 
-        return elements.remove(at: index).value
+        let removedValue = elements.remove(at: index).value
+        refreshIndices(startingAt: index)
+        return removedValue
     }
 
     @discardableResult
     package mutating func renameKey(from oldKey: String, to newKey: String) -> Bool {
-        guard let index = elements.firstIndex(where: { $0.key == oldKey }),
-              !elements.contains(where: { $0.key == newKey }) else {
+        guard let index = indicesByKey[oldKey],
+              indicesByKey[newKey] == nil else {
             return false
         }
 
         elements[index].key = newKey
+        indicesByKey.removeValue(forKey: oldKey)
+        indicesByKey[newKey] = index
         return true
     }
 
@@ -116,6 +129,7 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
 
         reordered.append(contentsOf: elements.filter { !consumed.contains($0.key) })
         elements = reordered
+        indicesByKey = Self.indicesByKey(for: elements)
     }
 
     package mutating func mutateValues(_ body: (String, inout Value) throws -> Void) rethrows {
@@ -127,6 +141,22 @@ package struct OrderedStringDictionary<Value: Codable & Sendable>: Codable, Send
 
     package func makeIterator() -> IndexingIterator<[Element]> {
         elements.makeIterator()
+    }
+
+    private mutating func refreshIndices(startingAt startIndex: Int) {
+        guard startIndex < elements.count else {
+            return
+        }
+
+        for index in startIndex..<elements.count {
+            indicesByKey[elements[index].key] = index
+        }
+    }
+
+    private static func indicesByKey(for elements: [Element]) -> [String: Int] {
+        Dictionary(uniqueKeysWithValues: elements.enumerated().map { index, element in
+            (element.key, index)
+        })
     }
 }
 
