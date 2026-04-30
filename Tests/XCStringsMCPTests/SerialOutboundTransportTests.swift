@@ -19,7 +19,7 @@ struct SerialOutboundTransportTests {
         let firstSend = Task {
             try await transport.send(Data("first".utf8))
         }
-        try await Task.sleep(for: .milliseconds(5))
+        await base.waitUntilFirstSendStarts()
         let secondSend = Task {
             try await transport.send(Data("second".utf8))
         }
@@ -38,6 +38,8 @@ private actor ReentrantRecordingTransport: Transport {
     private var activeSends = 0
     private var maximumActiveSends = 0
     private var messages: [String] = []
+    private var firstSendDidStart = false
+    private var firstSendStartedContinuation: CheckedContinuation<Void, Never>?
 
     nonisolated let logger = Logger(label: "xcatalog.tests.reentrant-recording-transport")
 
@@ -55,9 +57,30 @@ private actor ReentrantRecordingTransport: Transport {
         inboundMessages
     }
 
+    func waitUntilFirstSendStarts() async {
+        if firstSendDidStart {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if firstSendDidStart {
+                continuation.resume()
+            } else {
+                firstSendStartedContinuation = continuation
+            }
+        }
+    }
+
     func send(_ data: Data) async throws {
         activeSends += 1
         maximumActiveSends = max(maximumActiveSends, activeSends)
+
+        if !firstSendDidStart {
+            firstSendDidStart = true
+            firstSendStartedContinuation?.resume()
+            firstSendStartedContinuation = nil
+        }
+
         try await Task.sleep(for: .milliseconds(25))
         messages.append(String(decoding: data, as: UTF8.self))
         activeSends -= 1
